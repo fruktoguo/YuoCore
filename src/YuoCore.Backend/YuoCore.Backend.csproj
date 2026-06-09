@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.1.79" />
+    <PackageReference Include="Google.Protobuf" Version="3.35.0" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.15.3-beta.1" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageReference Include="StackExchange.Redis" Version="2.13.17" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\YuoCore.Actor.Ecs\YuoCore.Actor.Ecs.csproj" />
+    <ProjectReference Include="..\YuoCore.Ecs\YuoCore.Ecs.csproj" />
+    <ProjectReference Include="..\YuoCore.Game\YuoCore.Game.csproj" />
+    <ProjectReference Include="..\YuoCore.Gateway\YuoCore.Gateway.csproj" />
+    <ProjectReference Include="..\YuoCore.Persistence\YuoCore.Persistence.csproj" />
+    <ProjectReference Include="..\YuoCore.Persistence.Hosting\YuoCore.Persistence.Hosting.csproj" />
+    <ProjectReference Include="..\YuoCore.Protocol\YuoCore.Protocol.csproj" />
+    <ProjectReference Include="..\YuoCore.Runtime\YuoCore.Runtime.csproj" />
+    <ProjectReference Include="..\YuoCore.Runtime.Actor\YuoCore.Runtime.Actor.csproj" />
+    <ProjectReference Include="..\YuoCore.Server\YuoCore.Server.csproj" />
+    <ProjectReference Include="..\YuoCore.StateSync.Protocol\YuoCore.StateSync.Protocol.csproj" />
+  </ItemGroup>
+
+</Project>

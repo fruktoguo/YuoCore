@@ -1,0 +1,30 @@
+<Project>
+  <PropertyGroup>
+    <Authors Condition="'$(Authors)' == ''">YuoHira</Authors>
+    <Company Condition="'$(Company)' == ''">YuoCore</Company>
+    <PackageId Condition="'$(PackageId)' == ''">$(AssemblyName)</PackageId>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">0.1.0</VersionPrefix>
+    <RepositoryType Condition="'$(RepositoryType)' == ''">git</RepositoryType>
+    <RepositoryUrl Condition="'$(RepositoryUrl)' == ''">https://github.com/fruktoguo/YuoCore</RepositoryUrl>
+    <PackageProjectUrl Condition="'$(PackageProjectUrl)' == ''">https://github.com/fruktoguo/YuoCore</PackageProjectUrl>
+    <Description Condition="'$(Description)' == ''">Modular YuoCore game runtime package for ECS, Fiber, Actor, StateSync, Persistence, Unity, Web, and MMO server scenarios.</Description>
+    <PackageReleaseNotes Condition="'$(PackageReleaseNotes)' == ''">Initial 0.1.x modular architecture package. APIs are still evolving before 1.0.</PackageReleaseNotes>
+    <PackageTags Condition="'$(PackageTags)' == ''">yuocore;ecs;actor;fiber;mmo;game-server</PackageTags>
+    <PackageOutputPath Condition="'$(PackageOutputPath)' == ''">$(MSBuildThisFileDirectory)..\artifacts\packages</PackageOutputPath>
+    <IncludeSymbols Condition="'$(IncludeSymbols)' == ''">true</IncludeSymbols>
+    <SymbolPackageFormat Condition="'$(SymbolPackageFormat)' == ''">snupkg</SymbolPackageFormat>
+    <PackageReadmeFile Condition="'$(PackageReadmeFile)' == ''">README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'YuoCore.Analyzers' and '$(MSBuildProjectName)' != 'YuoCore.Tasks'">
+    <ProjectReference
+      Include="$(MSBuildThisFileDirectory)YuoCore.Analyzers/YuoCore.Analyzers.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+      PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <None Include="$(MSBuildThisFileDirectory)..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>

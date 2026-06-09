@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>YuoCore.Server</AssemblyName>
+    <RootNamespace>YuoCore.Server</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\YuoCore.Actor\YuoCore.Actor.csproj" />
+    <ProjectReference Include="..\YuoCore.Actor.Ecs\YuoCore.Actor.Ecs.csproj" />
+    <ProjectReference Include="..\YuoCore.Config\YuoCore.Config.csproj" />
+    <ProjectReference Include="..\YuoCore.Ecs\YuoCore.Ecs.csproj" />
+    <ProjectReference Include="..\YuoCore.Location\YuoCore.Location.csproj" />
+    <ProjectReference Include="..\YuoCore.Runtime\YuoCore.Runtime.csproj" />
+    <ProjectReference Include="..\YuoCore.Runtime.Actor\YuoCore.Runtime.Actor.csproj" />
+  </ItemGroup>
+</Project>

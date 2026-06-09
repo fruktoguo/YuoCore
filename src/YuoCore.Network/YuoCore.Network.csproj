@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>YuoCore.Network</AssemblyName>
+    <RootNamespace>YuoCore.Network</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\YuoCore.Location\YuoCore.Location.csproj" />
+    <ProjectReference Include="..\YuoCore.Protocol\YuoCore.Protocol.csproj" />
+  </ItemGroup>
+</Project>

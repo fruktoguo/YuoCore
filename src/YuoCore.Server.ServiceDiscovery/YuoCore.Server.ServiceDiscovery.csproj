@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>YuoCore.Server.ServiceDiscovery</AssemblyName>
+    <RootNamespace>YuoCore.Server.ServiceDiscovery</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\YuoCore.Config\YuoCore.Config.csproj" />
+    <ProjectReference Include="..\YuoCore.ServiceDiscovery\YuoCore.ServiceDiscovery.csproj" />
+  </ItemGroup>
+</Project>

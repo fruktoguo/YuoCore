@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>YuoCore.Actor.Ecs</AssemblyName>
+    <RootNamespace>YuoCore.Actor</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\YuoCore.Actor\YuoCore.Actor.csproj" />
+    <ProjectReference Include="..\YuoCore.Ecs\YuoCore.Ecs.csproj" />
+  </ItemGroup>
+</Project>

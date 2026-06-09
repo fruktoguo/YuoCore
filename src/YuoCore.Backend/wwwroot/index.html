@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YuoCore Idle</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #111418; color: #e8edf2; }
+    main { max-width: 760px; margin: 0 auto; padding: 32px 18px; }
+    h1 { font-size: 28px; margin: 0 0 20px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+    button, input { border: 1px solid #34404c; background: #1d242c; color: #e8edf2; border-radius: 6px; padding: 10px 12px; font-size: 14px; }
+    button { cursor: pointer; }
+    button:hover { background: #26313b; }
+    section { border-top: 1px solid #2a333d; padding-top: 18px; margin-top: 18px; }
+    pre { background: #0b0e11; border: 1px solid #26313b; border-radius: 6px; padding: 14px; overflow: auto; min-height: 180px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>YuoCore Idle</h1>
+  <div class="toolbar">
+    <input id="name" placeholder="玩家名" value="Yuo">
+    <button id="create">创建玩家</button>
+    <button id="click">点击 +1</button>
+    <button id="refresh">刷新状态</button>
+    <button id="seed">生成 10000 玩家</button>
+    <button id="stats">服务器状态</button>
+  </div>
+  <section>
+    <div>当前玩家：<span id="player">无</span></div>
+    <pre id="output">等待操作...</pre>
+  </section>
+</main>
+<script>
+let playerId = localStorage.getItem("playerId");
+const output = document.getElementById("output");
+const player = document.getElementById("player");
+player.textContent = playerId || "无";
+
+function show(data) {
+  output.textContent = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+}
+
+async function request(url, options) {
+  const response = await fetch(url, options);
+  const text = await response.text();
+  if (!response.ok) throw new Error(text || response.statusText);
+  return text ? JSON.parse(text) : null;
+}
+
+document.getElementById("create").onclick = async () => {
+  const data = await request("/api/game/players", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: document.getElementById("name").value })
+  });
+  playerId = data.playerId;
+  localStorage.setItem("playerId", playerId);
+  player.textContent = playerId;
+  show(data);
+};
+
+document.getElementById("click").onclick = async () => {
+  if (!playerId) return show("先创建玩家");
+  await request(`/api/game/players/${playerId}/click?amount=1`, { method: "POST" });
+  show("已发送点击命令，后台 Channel 会串行处理");
+};
+
+document.getElementById("refresh").onclick = async () => {
+  if (!playerId) return show("先创建玩家");
+  show(await request(`/api/game/players/${playerId}`));
+};
+
+document.getElementById("seed").onclick = async () => {
+  show("生成中...");
+  show(await request("/api/game/seed/10000", { method: "POST" }));
+};
+
+document.getElementById("stats").onclick = async () => {
+  show(await request("/api/game/stats"));
+};
+</script>
+</body>
+</html>

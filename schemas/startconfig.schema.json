@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yuocore.local/schemas/startconfig.schema.json",
+  "title": "YuoCore Start Config",
+  "type": "object",
+  "required": ["nodeId", "processId", "processKind", "fibers"],
+  "properties": {
+    "nodeId": { "type": "string", "minLength": 1 },
+    "processId": { "type": "string", "minLength": 1 },
+    "processKind": { "type": "string", "minLength": 1 },
+    "innerEndpoint": { "type": "string" },
+    "outerEndpoint": { "type": "string" },
+    "metadata": {
+      "type": "object",
+      "propertyNames": { "minLength": 1 },
+      "additionalProperties": { "type": "string" }
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "kind"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "minLength": 1 },
+          "endpoint": { "type": "string" },
+          "metadata": {
+            "type": "object",
+            "propertyNames": { "minLength": 1 },
+            "additionalProperties": { "type": "string" }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "fibers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "name": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string" },
+          "shardId": { "type": "integer", "minimum": 0 },
+          "setWorldAsDefault": { "type": "boolean" },
+          "maxMailboxMessagesPerTick": { "type": "integer", "minimum": 1 },
+          "metadata": {
+            "type": "object",
+            "propertyNames": { "minLength": 1 },
+            "additionalProperties": { "type": "string" }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

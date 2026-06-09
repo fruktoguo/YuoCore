@@ -1,0 +1,16 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+
+BenchmarkDotNet.Artifacts/
+artifacts/
+references/
+mud-mmo-next/
+clients/web/yuocore-client-ts/dist/
+clients/web/yuocore-client-ts/node_modules/
+
+*.user
+*.suo
+*.tmp
+*.log

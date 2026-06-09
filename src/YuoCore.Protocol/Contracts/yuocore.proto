@@ -1,0 +1,212 @@
+syntax = "proto3";
+
+package yuocore.protocol;
+
+option csharp_namespace = "YuoCore.Protocol";
+
+message YuoClientEnvelopeV1 {
+  uint32 version = 1;
+  uint32 opcode = 2;
+  uint64 request_id = 3;
+  uint64 client_seq = 4;
+  bytes payload = 5;
+}
+
+message YuoServerEnvelopeV1 {
+  uint32 version = 1;
+  uint32 opcode = 2;
+  uint64 request_id = 3;
+  uint64 server_seq = 4;
+  ErrorResponse error = 5;
+  bytes payload = 6;
+}
+
+message ClientEnvelope {
+  uint64 request_id = 1;
+  oneof payload {
+    HelloRequest hello = 2;
+    ClickRequest click = 3;
+    SnapshotRequest snapshot = 4;
+    PingRequest ping = 5;
+    EnterMapRequest enter_map = 6;
+    MoveRequest move = 7;
+    DisconnectRequest disconnect = 8;
+  }
+}
+
+message HelloRequest {
+  string player_id = 1;
+}
+
+message ClickRequest {
+  string player_id = 1;
+  int64 amount = 2;
+}
+
+message SnapshotRequest {
+  string player_id = 1;
+}
+
+message PingRequest {
+  int64 unix_ms = 1;
+}
+
+message EnterMapRequest {
+  string player_id = 1;
+  int64 map_id = 2;
+}
+
+message MoveRequest {
+  string player_id = 1;
+  uint64 input_seq = 2;
+  float x = 3;
+  float y = 4;
+  float z = 5;
+}
+
+message DisconnectRequest {
+  string player_id = 1;
+  string session_id = 2;
+}
+
+message StateSnapshotRequest {
+  string player_id = 1;
+  int64 known_tick = 2;
+}
+
+message StateSyncRecoverRequest {
+  string player_id = 1;
+  int64 known_tick = 2;
+  string stream_id = 3;
+}
+
+message StateSyncRecoverResponse {
+  bool replayed = 1;
+  string reason = 2;
+  StateSnapshotMessage snapshot = 3;
+  repeated StateDeltaMessage deltas = 4;
+  string stream_id = 5;
+}
+
+message StateSyncAckRequest {
+  string player_id = 1;
+  int64 ack_tick = 2;
+  string stream_id = 3;
+}
+
+message StateSyncAckResponse {
+  bool accepted = 1;
+  int64 ack_tick = 2;
+  int64 latest_tick = 3;
+  string reason = 4;
+  string stream_id = 5;
+}
+
+message StateSubscriptionMessage {
+  repeated string stream_ids = 1;
+  string reason = 2;
+  bool reset_missing = 3;
+}
+
+message ServerEnvelope {
+  uint64 request_id = 1;
+  oneof payload {
+    Welcome welcome = 2;
+    PlayerSnapshot snapshot = 3;
+    ErrorResponse error = 4;
+    PongResponse pong = 5;
+    WorldSnapshot world = 6;
+  }
+}
+
+message Welcome {
+  string player_id = 1;
+  string message = 2;
+}
+
+message PlayerSnapshot {
+  string player_id = 1;
+  string name = 2;
+  int64 gold = 3;
+  int64 exp = 4;
+  int32 level = 5;
+  int64 power = 6;
+  int64 clicks = 7;
+  int64 updated_unix_ms = 8;
+  int64 map_id = 9;
+  int64 unit_id = 10;
+  float x = 11;
+  float y = 12;
+  float z = 13;
+  bool online = 14;
+  uint64 last_input_seq = 15;
+}
+
+message ErrorResponse {
+  string code = 1;
+  string message = 2;
+}
+
+message PongResponse {
+  int64 unix_ms = 1;
+}
+
+message PlayerWorldState {
+  string player_id = 1;
+  string name = 2;
+  int64 map_id = 3;
+  int64 unit_id = 4;
+  float x = 5;
+  float y = 6;
+  float z = 7;
+  bool online = 8;
+  uint64 last_input_seq = 9;
+  int64 updated_unix_ms = 10;
+}
+
+message WorldEvent {
+  string kind = 1;
+  PlayerWorldState player = 2;
+  int64 created_unix_ms = 3;
+}
+
+message WorldSnapshot {
+  int64 map_id = 1;
+  int64 tick = 2;
+  repeated PlayerWorldState players = 3;
+  repeated WorldEvent events = 4;
+}
+
+message NetworkEntityState {
+  int64 network_id = 1;
+  string kind = 2;
+  uint32 version = 3;
+  bytes payload = 4;
+}
+
+enum StateChangeKind {
+  STATE_CHANGE_KIND_UNKNOWN = 0;
+  STATE_CHANGE_KIND_ENTER = 1;
+  STATE_CHANGE_KIND_UPDATE = 2;
+  STATE_CHANGE_KIND_LEAVE = 3;
+  STATE_CHANGE_KIND_DESTROY = 4;
+}
+
+message StateChangeMessage {
+  StateChangeKind kind = 1;
+  NetworkEntityState state = 2;
+  int64 network_id = 3;
+}
+
+message StateSnapshotMessage {
+  int64 tick = 1;
+  repeated NetworkEntityState entities = 2;
+  string stream_id = 3;
+}
+
+message StateDeltaMessage {
+  int64 tick = 1;
+  repeated StateChangeMessage changes = 2;
+  optional int64 base_tick = 3;
+  string stream_id = 4;
+}

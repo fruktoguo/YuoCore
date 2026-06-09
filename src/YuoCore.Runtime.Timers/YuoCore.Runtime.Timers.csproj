@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>YuoCore.Runtime.Timers</AssemblyName>
+    <RootNamespace>YuoCore.Runtime.Timers</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\YuoCore.Runtime\YuoCore.Runtime.csproj" />
+    <ProjectReference Include="..\YuoCore.Timers\YuoCore.Timers.csproj" />
+  </ItemGroup>
+</Project>
