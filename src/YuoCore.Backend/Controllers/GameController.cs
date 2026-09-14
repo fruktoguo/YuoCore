@@ -33,7 +33,6 @@ public sealed class GameController : ControllerBase
     {
         if (_runtime.TryGetSnapshot(playerId, out var live))
         {
-            await _persistence.SaveAsync(live, cancellationToken);
             return live;
         }
 

@@ -54,6 +54,24 @@ public sealed class GameRuntimeTests
     }
 
     [Fact]
+    public async Task Get_player_endpoint_does_not_write_back_to_storage()
+    {
+        using var runtime = new GameRuntime(Options.Create(new GameOptions { TickRate = 10 }));
+        runtime.Start();
+        var player = runtime.LoginPlayer("get-live", null, "session-g");
+        var repository = new RecordingSnapshotRepository();
+        var controller = new YuoCore.Backend.Controllers.GameController(
+            runtime,
+            new GameCommandQueue(Options.Create(new GameOptions())),
+            new SnapshotPersistenceService(repository, new NoopPlayerSnapshotCache()));
+
+        var result = await controller.Get(player.PlayerId, CancellationToken.None);
+
+        Assert.NotNull(result.Value);
+        Assert.Equal(0, repository.SaveCount);
+    }
+
+    [Fact]
     public void Runtime_can_seed_10k_players_and_tick()
     {
         using var runtime = new GameRuntime(Options.Create(new GameOptions { TickRate = 10 }));
@@ -317,9 +335,12 @@ file sealed class RecordingSnapshotRepository : IPlayerSnapshotRepository
 {
     public YuoPlayerSnapshotDto? LastSaved { get; private set; }
 
+    public int SaveCount { get; private set; }
+
     public Task SaveAsync(YuoPlayerSnapshotDto snapshot, CancellationToken cancellationToken = default)
     {
         LastSaved = snapshot;
+        SaveCount++;
         return Task.CompletedTask;
     }
 
