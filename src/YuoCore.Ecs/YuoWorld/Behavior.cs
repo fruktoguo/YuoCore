@@ -85,6 +85,7 @@ namespace YuoCore.Ecs
         /// </summary>
         public void Update()
         {
+            Time.Update();
             ExecutionCommandBuffer();
             var processedStartCount = 0;
             try

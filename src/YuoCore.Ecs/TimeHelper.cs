@@ -66,12 +66,15 @@ namespace YuoCore.Ecs.Helpers
 
         public long FrameTime;
 
-        private TimeInfo()
+        public TimeInfo()
         {
             this.FrameTime = this.ClientNow();
         }
 
-        public void Update()
+        /// <summary>
+        /// 由宿主在世界 tick 中驱动；确定性时钟可重写为固定步长推进
+        /// </summary>
+        public virtual void Update()
         {
             this.FrameTime = this.ClientNow();
         }
@@ -85,14 +88,14 @@ namespace YuoCore.Ecs.Helpers
         }
 
         // 线程安全
-        public long ClientNow()
+        public virtual long ClientNow()
         {
             return (DateTime.UtcNow.Ticks - this._dt1970.Ticks) / 10000;
         }
 
         public long ServerNow()
         {
-            return ClientNow() + Instance.ServerMinusClientTime;
+            return ClientNow() + this.ServerMinusClientTime;
         }
 
         public long ClientFrameTime()
@@ -102,7 +105,7 @@ namespace YuoCore.Ecs.Helpers
 
         public long ServerFrameTime()
         {
-            return this.FrameTime + Instance.ServerMinusClientTime;
+            return this.FrameTime + this.ServerMinusClientTime;
         }
 
         public long Transition(DateTime d)

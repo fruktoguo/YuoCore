@@ -10,7 +10,7 @@ public sealed class YuoIdleTickSystem : YuoSystem<YuoIdlePlayerComponent, YuoIdl
 {
     public override void Run(YuoIdlePlayerComponent player, YuoIdleWalletComponent wallet, YuoIdleProgressComponent progress)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = DateTimeOffset.FromUnixTimeMilliseconds(progress.Entity.World.Time.FrameTime);
         var elapsed = Math.Clamp((now - progress.LastTickAt).TotalSeconds, 0, 5);
         if (elapsed <= 0) return;
 

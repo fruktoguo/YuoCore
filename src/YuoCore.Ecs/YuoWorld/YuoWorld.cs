@@ -64,6 +64,23 @@ namespace YuoCore.Ecs
         public Dictionary<long, YuoEntity> Entities { get; private set; } = new();
 
         /// <summary>
+        /// 世界时钟，默认共享 TimeInfo.Instance；OnInit 前可注入确定性时钟，
+        /// 每次 Update 推进一次 FrameTime
+        /// </summary>
+        public YuoCore.Ecs.Helpers.TimeInfo Time { get; set; } = YuoCore.Ecs.Helpers.TimeInfo.Instance;
+
+        private IDGenerate _idGenerate;
+
+        /// <summary>
+        /// 实体 ID 生成器，绑定本世界时钟；OnInit 前可注入自定义生成器
+        /// </summary>
+        public IDGenerate IdGenerate
+        {
+            get => _idGenerate ??= new IDGenerate(Time);
+            set => _idGenerate = value;
+        }
+
+        /// <summary>
         /// 组件类型到组件实例的映射
         /// </summary>
         private MultiHashSetMap<Type, YuoComponent> components = new();

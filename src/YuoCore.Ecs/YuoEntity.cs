@@ -13,11 +13,11 @@ namespace YuoCore.Ecs
         public MultiHashSetMap<Type, YuoComponent> ChildComponents { get; private set; } = new();
         public MultiHashSetMap<Type, YuoComponent> BaseComponents { get; private set; } = new();
         
-        public YuoEntity() : this(YuoWorld.RequireInstance(), IDGenerate.Instance.GenerateInstanceId())
+        public YuoEntity() : this(YuoWorld.RequireInstance())
         {
         }
 
-        public YuoEntity(YuoWorld world) : this(world, IDGenerate.Instance.GenerateInstanceId())
+        public YuoEntity(YuoWorld world) : this(world, (world ?? throw new ArgumentNullException(nameof(world))).IdGenerate.GenerateInstanceId())
         {
         }
 

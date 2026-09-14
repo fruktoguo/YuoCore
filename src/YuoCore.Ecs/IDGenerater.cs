@@ -28,7 +28,7 @@ namespace YuoCore.Ecs
 
         public static long GetID(YuoEntity entity)
         {
-            return Instance.GenerateInstanceId();
+            return entity.World.IdGenerate.GenerateInstanceId();
         }
 
         public static long GetID(string name)
@@ -45,8 +45,15 @@ namespace YuoCore.Ecs
             return unchecked((long)(hash & 0x7fffffffffffffff));
         }
 
-        public IDGenerate()
+        private readonly TimeInfo _time;
+
+        public IDGenerate() : this(TimeInfo.Instance)
         {
+        }
+
+        public IDGenerate(TimeInfo time)
+        {
+            _time = time;
             long epoch1970Tick = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).Ticks / 10000;
             epoch2022 = new DateTime(2022, 1, 1, 0, 0, 0, DateTimeKind.Utc).Ticks / 10000 - epoch1970Tick;
         }
@@ -63,7 +70,7 @@ namespace YuoCore.Ecs
 
         private uint TimeSince2022()
         {
-            uint a = (uint)((TimeInfo.Instance.FrameTime - this.epoch2022) / 1000);
+            uint a = (uint)((_time.FrameTime - this.epoch2022) / 1000);
             return a;
         }
 

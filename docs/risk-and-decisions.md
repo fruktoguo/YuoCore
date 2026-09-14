@@ -2189,3 +2189,15 @@ CheckValidEntity→Entities.Add 会让迭代器 bump version 直接抛错中断�
 测试：Game.Tests 新增迭代安全回归 2 例（Add 中断路径在旧实现下失败）。
 备注：.NET 的 HashSet/Dictionary 迭代器对 Remove 不抛错，真实缺陷路径是 Add。
 ```
+
+### 世界时钟与实体 ID 生成器不可注入（已修复）
+
+```text
+问题：TimeInfo.Instance 是全局墙钟且私有构造，FrameTime 无人驱动；
+IDGenerate 绑定全局时钟，无法做确定性回放；YuoIdleTickSystem 直接用 UtcNow。
+修复：YuoWorld.Time 可注入（默认共享实例），Update 每 tick 驱动一次；
+TimeInfo 构造公开、Update/ClientNow 可重写支持固定步长时钟；
+IDGenerate 绑定传入的 TimeInfo；挂机系统改用世界时钟。
+附带修复：ServerNow/ServerFrameTime 误用 Instance 的时差而非 this。
+测试：Game.Tests 新增固定步长时钟回归（旧实现下挂机产出为 0 会失败）。
+```
