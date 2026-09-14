@@ -1017,9 +1017,16 @@ public sealed class GameRuntime : IDisposable
     {
         if (_shards.Count == 0) throw new InvalidOperationException("Game runtime has not started.");
 
-        // Guid.GetHashCode 在同一进程内足够用于压测分布；持久化分片规则后续应换成稳定 hash。
-        var shardIndex = Math.Abs(playerId.GetHashCode() % _shards.Count);
-        return _shards[shardIndex];
+        return _shards[SelectShardIndex(playerId, _shards.Count)];
+    }
+
+    internal static int SelectShardIndex(Guid playerId, int shardCount)
+    {
+        if (shardCount <= 0) throw new ArgumentOutOfRangeException(nameof(shardCount), "shard count must be positive.");
+
+        // 分片必须跨进程稳定：Guid.GetHashCode 带进程随机种子，重启后同一玩家会落到别的 shard，
+        // 导致持久化 actor 寻址错乱。改用与命名实体 ID 相同的确定性 FNV-1a。
+        return (int)(IDGenerate.GetID(playerId.ToString("N")) % shardCount);
     }
 
     private sealed record GameShard(

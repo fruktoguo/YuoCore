@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using YuoCore.Backend.Game;
 using YuoCore.Backend.Infrastructure;
+using YuoCore.Ecs;
 using YuoCore.Game;
 using YuoCore.StateSync;
 
@@ -38,6 +39,18 @@ public sealed class GameRuntimeTests
 
         Assert.False(result.Success);
         Assert.Equal("unsupported_command", result.ErrorCode);
+    }
+
+    [Fact]
+    public void Shard_selection_is_deterministic_across_processes()
+    {
+        var playerId = Guid.Parse("12345678-1234-1234-1234-1234567890ab");
+
+        Assert.Equal(
+            GameRuntime.SelectShardIndex(playerId, 4),
+            (int)(IDGenerate.GetID(playerId.ToString("N")) % 4));
+        Assert.InRange(GameRuntime.SelectShardIndex(playerId, 7), 0, 6);
+        Assert.Throws<ArgumentOutOfRangeException>(() => GameRuntime.SelectShardIndex(playerId, 0));
     }
 
     [Fact]
