@@ -10,6 +10,11 @@ namespace YuoCore.Actor;
 /// </summary>
 public sealed class YuoActorLocationMigrationCoordinator
 {
+    /// <summary>
+    /// 迁移锁默认 TTL。调用方不传 lockTtl 时使用，避免迁移方崩溃后锁永不过期。
+    /// </summary>
+    public static readonly TimeSpan DefaultLockTtl = TimeSpan.FromSeconds(30);
+
     private readonly IYuoLocationRegistry _locations;
     private readonly IReadOnlyList<YuoActorLocationSender> _senders;
 
@@ -29,7 +34,11 @@ public sealed class YuoActorLocationMigrationCoordinator
         TimeSpan? lockTtl = null,
         CancellationToken cancellationToken = default)
     {
-        var locked = await _locations.LockAsync(key, owner, lockTtl, cancellationToken).ConfigureAwait(false);
+        var locked = await _locations.LockAsync(
+            key,
+            owner,
+            lockTtl ?? DefaultLockTtl,
+            cancellationToken).ConfigureAwait(false);
         if (!locked.IsSuccess)
         {
             return locked;

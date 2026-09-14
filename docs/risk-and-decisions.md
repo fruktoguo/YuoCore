@@ -2271,3 +2271,14 @@ InvalidOperationException。ScheduleOnce/ScheduleRepeated 仅注册不等待，
 修复：适配器新增 processId 构造参数（缺省 "default"），写入侧使用配置值；
 读侧行为不变（ActorAddress 模型本就不含 ProcessId）。
 ```
+
+### 迁移协调器不传 TTL 导致锁永不过期（已修复）
+
+```text
+问题：YuoActorLocationMigrationCoordinator.MigrateAsync 缺省 lockTtl=null
+透传给 LockAsync，得到永不过期的锁；迁移方在 Lock 与 Migrate 之间崩溃
+会把该 location 永久锁死。
+修复：协调器新增 DefaultLockTtl=30s，未显式传 lockTtl 时自动套用；
+显式传入的 TTL 原样透传。
+测试：回归覆盖缺省套用与显式透传两条路径。
+```

@@ -173,6 +173,37 @@ public sealed class YuoActorLocationMigrationCoordinatorTests
         Assert.Equal("token-1", locations.UnlockToken);
     }
 
+    [Fact]
+    public async Task Migrate_applies_default_lock_ttl_when_none_given()
+    {
+        var key = new YuoLocationKey("Player", "move-default-ttl");
+        var oldAddress = new YuoActorAddress("local", "game", 96, 9601);
+        var newAddress = new YuoActorAddress("local", "game", 97, 9701);
+        var locations = new TokenRequiredLocationRegistry(key, oldAddress, newAddress);
+
+        var coordinator = new YuoActorLocationMigrationCoordinator(locations);
+        var migrated = await coordinator.MigrateAsync(key, "move", oldAddress, newAddress);
+
+        Assert.True(migrated.IsSuccess);
+        Assert.Equal(YuoActorLocationMigrationCoordinator.DefaultLockTtl, locations.LastLockTtl);
+    }
+
+    [Fact]
+    public async Task Migrate_passes_explicit_lock_ttl()
+    {
+        var key = new YuoLocationKey("Player", "move-explicit-ttl");
+        var oldAddress = new YuoActorAddress("local", "game", 96, 9601);
+        var newAddress = new YuoActorAddress("local", "game", 97, 9701);
+        var locations = new TokenRequiredLocationRegistry(key, oldAddress, newAddress);
+
+        var coordinator = new YuoActorLocationMigrationCoordinator(locations);
+        var ttl = TimeSpan.FromSeconds(7);
+        var migrated = await coordinator.MigrateAsync(key, "move", oldAddress, newAddress, ttl);
+
+        Assert.True(migrated.IsSuccess);
+        Assert.Equal(ttl, locations.LastLockTtl);
+    }
+
     private sealed record GetCounter(ActorId TargetActorId) : IActorRequest<long>;
 
     private sealed class BlockingMigrationLocationRegistry(
@@ -323,6 +354,8 @@ public sealed class YuoActorLocationMigrationCoordinatorTests
 
         public string? UnlockToken { get; private set; }
 
+        public TimeSpan? LastLockTtl { get; private set; }
+
         public bool ForceMigrationFailure { get; init; }
 
         public ValueTask<YuoResult<YuoLocationEntry>> RegisterAsync(
@@ -349,6 +382,7 @@ public sealed class YuoActorLocationMigrationCoordinatorTests
         {
             Assert.Equal(expectedKey, key);
             Assert.Equal("move", owner);
+            LastLockTtl = ttl;
             return ValueTask.FromResult(YuoResult<YuoLocationEntry>.Ok(new YuoLocationEntry(
                 key,
                 oldAddress,
