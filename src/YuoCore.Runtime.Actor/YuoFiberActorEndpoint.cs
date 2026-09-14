@@ -21,7 +21,15 @@ public sealed class YuoFiberActorEndpoint : IActorEndpoint
     public ValueTask SendAsync(ActorEnvelope envelope, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        return _fiber.PostAsync((_, token) => DispatchSendAsync(envelope, token), cancellationToken);
+        // 目标 Fiber 已销毁属于典型的 stale-route：翻译为 404，让 sender 失效缓存并重查 Location。
+        try
+        {
+            return _fiber.PostAsync((_, token) => DispatchSendAsync(envelope, token), cancellationToken);
+        }
+        catch (ObjectDisposedException)
+        {
+            throw CreateFiberGoneException();
+        }
     }
 
     public async ValueTask<ActorEnvelope> InvokeAsync(
@@ -30,7 +38,10 @@ public sealed class YuoFiberActorEndpoint : IActorEndpoint
     {
         ArgumentNullException.ThrowIfNull(envelope);
 
-        return await _fiber.CallAsync(async (_, token) =>
+        ValueTask<ActorEnvelope> call;
+        try
+        {
+            call = _fiber.CallAsync(async (_, token) =>
         {
             try
             {
@@ -45,7 +56,20 @@ public sealed class YuoFiberActorEndpoint : IActorEndpoint
             {
                 return ActorEnvelope.Failure(envelope, ActorError.HandlerFailed(exception));
             }
-        }, cancellationToken).ConfigureAwait(false);
+        }, cancellationToken);
+        }
+        catch (ObjectDisposedException)
+        {
+            throw CreateFiberGoneException();
+        }
+
+        return await call.ConfigureAwait(false);
+    }
+
+    private ActorException CreateFiberGoneException()
+    {
+        return new ActorException(ActorError.NotFound(
+            $"Target fiber '{_fiber.Name}' (id={_fiber.Id}) is disposed."));
     }
 
     private ValueTask DispatchSendAsync(ActorEnvelope envelope, CancellationToken cancellationToken)

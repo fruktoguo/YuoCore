@@ -108,6 +108,26 @@ public sealed class YuoFiberActorEndpointTests
         Assert.IsType<InvalidOperationException>(errors[0]);
     }
 
+    [Fact]
+    public async Task Disposed_fiber_surfaces_not_found_for_stale_route()
+    {
+        var runtime = new YuoCoreRuntime();
+        var fiber = runtime.Fibers.CreateFiber(new YuoFiberOptions { Id = 26, Name = "gone-fiber" });
+        var endpoint = new YuoFiberActorEndpoint(
+            fiber,
+            new DelegateActorMessageDispatcher((_, _) => ValueTask.FromResult<object?>(null)));
+        var envelope = ActorEnvelope.ForMessage(new FailSend(new ActorId(26_001)));
+
+        fiber.Dispose();
+
+        var sendError = Assert.Throws<ActorException>(() => endpoint.SendAsync(envelope));
+        Assert.Equal(404, sendError.Error.Code);
+
+        var invokeError = await Assert.ThrowsAsync<ActorException>(async () =>
+            await endpoint.InvokeAsync(envelope));
+        Assert.Equal(404, invokeError.Error.Code);
+    }
+
     private sealed class TestCounterComponent : YuoComponent
     {
         public int Pending;
