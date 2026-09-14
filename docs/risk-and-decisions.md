@@ -2297,3 +2297,13 @@ UnregisterLocalEntityActorAsync，先摘两级 Location 再移 transport
 endpoint 与实体映射。
 测试：Server.Tests 覆盖跨 World 拒绝与反注册后三表清空。
 ```
+
+### dead-letter sink 异常被静默吞掉（已修复）
+
+```text
+问题：ReportCommandFailureAsync 的 catch-all 吞掉 failureSink 异常，
+dead letter 证据丢失完全不可见——对持久化证据链是隐性单点。
+修复：sink 失败累计 FailureSinkErrorCount 并经 ILogger（Hosting
+可选注入）输出 Error 日志；循环存活语义不变，只是不再静默。
+测试：既有 ThrowingFailureSink 用例追加 FailureSinkErrorCount 断言。
+```

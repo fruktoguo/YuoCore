@@ -151,6 +151,7 @@ public sealed class YuoPersistenceBackgroundServiceTests
 
         Assert.Single(snapshots.Saved);
         Assert.Equal("p4", snapshots.Saved[0].Id);
+        Assert.Equal(1, service.FailureSinkErrorCount);
     }
 
     [Fact]

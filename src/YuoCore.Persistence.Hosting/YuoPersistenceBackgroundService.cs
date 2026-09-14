@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Threading.Channels;
 
@@ -14,14 +15,20 @@ public sealed class YuoPersistenceBackgroundService(
     IYuoEventStore eventStore,
     IOptions<YuoPersistenceWriterOptions>? options = null,
     IYuoPersistenceFailureSink? failureSink = null,
-    IYuoPersistenceOutbox? outbox = null) : BackgroundService
+    IYuoPersistenceOutbox? outbox = null,
+    ILogger<YuoPersistenceBackgroundService>? logger = null) : BackgroundService
 {
     private readonly YuoPersistenceQueue _queue = queue ?? throw new ArgumentNullException(nameof(queue));
     private readonly IYuoSnapshotStore _snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
     private readonly IYuoEventStore _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
     private readonly YuoPersistenceWriterOptions _options = ValidateOptions(
         options?.Value ?? new YuoPersistenceWriterOptions());
+    private readonly ILogger<YuoPersistenceBackgroundService>? _logger = logger;
     private long _outboxAckBlockedAt;
+    private long _failureSinkErrors;
+
+    /// <summary>失败出口自身抛错的累计次数；非零即存在 dead letter 证据丢失风险。</summary>
+    public long FailureSinkErrorCount => Interlocked.Read(ref _failureSinkErrors);
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
@@ -224,10 +231,15 @@ public sealed class YuoPersistenceBackgroundService(
         {
             // 停服取消时不再强行记录失败，避免 shutdown 被失败出口拖住。
         }
-        catch
+        catch (Exception sinkException)
         {
-            // 失败出口本身不能成为后台写回循环的新单点故障。
-            // 需要强一致 dead letter 的项目，应在宿主层实现可靠 sink 并自行报警。
+            // 失败出口本身不能成为后台写回循环的新单点故障，
+            // 但 dead letter 证据丢失必须可见：计数 + 日志，由宿主接入告警。
+            Interlocked.Increment(ref _failureSinkErrors);
+            _logger?.LogError(
+                sinkException,
+                "Persistence failure sink threw while recording {CommandType}; dead letter evidence was lost.",
+                command.GetType().FullName);
         }
     }
 
