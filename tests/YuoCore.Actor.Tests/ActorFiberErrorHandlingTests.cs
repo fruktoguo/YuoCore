@@ -69,5 +69,16 @@ public sealed class ActorFiberErrorHandlingTests
         Assert.Equal("guarded", marker);
     }
 
+    [Fact]
+    public async Task Start_after_dispose_throws_instead_of_restarting()
+    {
+        var fiber = new ActorFiber(
+            11,
+            new DelegateActorMessageDispatcher((_, _) => ValueTask.FromResult<object?>(null)));
+        await fiber.DisposeAsync();
+
+        Assert.Throws<ObjectDisposedException>(() => fiber.Start());
+    }
+
     private sealed record Ping(ActorId TargetActorId) : IActorMessage;
 }

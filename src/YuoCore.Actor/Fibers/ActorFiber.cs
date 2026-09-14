@@ -38,15 +38,25 @@ public sealed class ActorFiber : IActorEndpoint, IAsyncDisposable
     /// <summary>当前 mailbox 中尚未消费的消息数（含写入阻塞中的投递），供监控观测。</summary>
     public int PendingMessageCount => Volatile.Read(ref _pendingMessages);
 
+    private readonly object _startGate = new();
+
     public void Start(CancellationToken cancellationToken = default)
     {
-        if (_runTask is not null)
+        lock (_startGate)
         {
-            return;
-        }
+            if (_stop.IsCancellationRequested)
+            {
+                throw new ObjectDisposedException(nameof(ActorFiber), $"Actor fiber {FiberId} is disposed.");
+            }
 
-        var linked = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, cancellationToken);
-        _runTask = Task.Run(() => RunAsync(linked.Token), CancellationToken.None);
+            if (_runTask is not null)
+            {
+                return;
+            }
+
+            var linked = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, cancellationToken);
+            _runTask = Task.Run(() => RunAsync(linked.Token), CancellationToken.None);
+        }
     }
 
     public async ValueTask SendAsync(ActorEnvelope envelope, CancellationToken cancellationToken = default)
