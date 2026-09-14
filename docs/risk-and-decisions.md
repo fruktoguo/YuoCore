@@ -2167,3 +2167,13 @@ ecs-shape p95=156.187ms，allocated=327.427MB
 这不是阻断级退化，但也不能当作性能无影响。
 后续应跑多轮 quick 或 soak，再决定是否继续优化 first-session frame publish、AOI delta 构建和 actor enqueue。
 ```
+
+### MultiMap 共享空集合可被索引器写入污染（已修复）
+
+```text
+问题：MultiMap/MultiHashSetMap/MultiDicMap 的索引器在键缺失时返回共享可变 _empty，
+SetComponent、RemoveComponent 等路径会把组件写进/误删共享空集合，污染后续所有缺键查询；
+RemoveItem 在键缺失时还会白建空集合造成泄漏。
+修复：索引器返回类型收窄为 IReadOnlyList/IReadOnlySet/IReadOnlyDictionary，
+写入统一走 AddItem/RemoveItem/TryGetValue；RemoveItem 缺键直接返回 false 不再建空壳。
+```

@@ -47,9 +47,9 @@ namespace YuoCore.Ecs
         /// <summary>
         /// 获取指定类型的所有组件
         /// </summary>
-        public HashSet<YuoComponent> GetAllComponents<T>() where T : YuoComponent
+        public IReadOnlySet<YuoComponent> GetAllComponents<T>() where T : YuoComponent
         {
-            return components.ContainsKey(typeof(T)) ? components[typeof(T)] : null;
+            return components[typeof(T)];
         }
 
         /// <summary>
@@ -208,9 +208,7 @@ namespace YuoCore.Ecs
                     {
                         if (iInter == typeof(ISystemTag))
                         {
-                            if (!systemsOfTag.ContainsKey(inter))
-                                systemsOfTag.Add(inter, new());
-                            systemsOfTag[inter].Add(system);
+                            systemsOfTag.AddItem(inter, system);
                             system.systemTags.Add(inter);
                         }
                     }

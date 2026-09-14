@@ -61,7 +61,7 @@ namespace YuoCore.Ecs
         /// </summary>
         public void RemoveComponent(YuoEntity entity, YuoComponent component)
         {
-            components[component.Type].Remove(component);
+            components.RemoveItem(component.Type, component);
             // 世界销毁即游戏退出时，不调用 Destroy，只调用 ExitGame
             if (IsPlaying)
             {
@@ -103,12 +103,13 @@ namespace YuoCore.Ecs
         /// </summary>
         public void AddComponent(YuoEntity entity, YuoComponent component, Type componentType)
         {
-            if (!components.ContainsKey(componentType))
+            if (!components.TryGetValue(componentType, out var componentSet))
             {
-                components.Add(componentType, new());
+                componentSet = new();
+                components.Add(componentType, componentSet);
             }
 
-            if (!components[componentType].Contains(component))
+            if (!componentSet.Contains(component))
             {
                 if (baseTypeMap.TryGetValue(componentType, out var baseType))
                 {
@@ -117,14 +118,14 @@ namespace YuoCore.Ecs
                     RunSystemOfBase<IAwake>(entity, baseType);
                 }
 
-                components[componentType].Add(component);
+                componentSet.Add(component);
                 // 运行 Awake 系统
                 RunSystem<IAwake>(entity, componentType);
                 startSystems.Add(component);
 
                 if (singleComponents.Contains(componentType))
                 {
-                    foreach (var yuoComponent in components[componentType])
+                    foreach (var yuoComponent in componentSet)
                     {
                         if (yuoComponent != component && yuoComponent.Entity == entity)
                             yuoComponent.DestroyComponent();
@@ -138,9 +139,16 @@ namespace YuoCore.Ecs
         /// </summary>
         public void SetComponent(YuoComponent component1, YuoComponent component2)
         {
-            var list = components[component1.Type];
-            list.Remove(component1);
-            list.Add(component2);
+            if (components.TryGetValue(component1.Type, out var list))
+            {
+                list.Remove(component1);
+                list.Add(component2);
+            }
+            else
+            {
+                // component1 的类型从未注册时不能把 component2 写进共享空集合，按新组件登记。
+                components.AddItem(component1.Type, component2);
+            }
 
             RunSystemOfTag<ISwitchComponent>(component2);
         }

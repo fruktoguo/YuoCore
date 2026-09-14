@@ -367,7 +367,7 @@ namespace YuoCore.Ecs
             Components.Remove(component.Type);
             if (component.HasBaseType)
             {
-                BaseComponents[component.BaseComponentType].Remove(component);
+                BaseComponents.RemoveItem(component.BaseComponentType, component);
             }
 
             Parent?.RemoveChildComponent(component);
