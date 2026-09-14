@@ -56,12 +56,31 @@ public sealed class ActorFiber : IActorEndpoint, IAsyncDisposable
         await EnqueueAsync(new MailboxItem(envelope), cancellationToken);
     }
 
-    public async ValueTask<ActorEnvelope> InvokeAsync(
+    // 当前正在派发消息的 ActorFiber，随 async 上下文流动，用于同 Fiber Invoke 死锁守卫
+    private static readonly AsyncLocal<ActorFiber?> s_current = new();
+
+    /// <summary>当前执行上下文所属的 ActorFiber；不在任何 ActorFiber 派发内时为 null。</summary>
+    public static ActorFiber? Current => s_current.Value;
+
+    public ValueTask<ActorEnvelope> InvokeAsync(
         ActorEnvelope envelope,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(envelope);
+        // 同 Fiber 内 Invoke 必然死锁（单 reader 被本消息占住），快速失败。
+        if (ReferenceEquals(s_current.Value, this))
+        {
+            throw new InvalidOperationException(
+                $"ActorFiber {FiberId}: InvokeAsync on the executing fiber would deadlock. Use SendAsync or restructure the call chain.");
+        }
 
+        return InvokeAsyncCore(envelope, cancellationToken);
+    }
+
+    private async ValueTask<ActorEnvelope> InvokeAsyncCore(
+        ActorEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
         var completion = new TaskCompletionSource<ActorEnvelope>(
             TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -115,6 +134,8 @@ public sealed class ActorFiber : IActorEndpoint, IAsyncDisposable
 
     private async ValueTask DispatchMailboxItemAsync(MailboxItem item, CancellationToken cancellationToken)
     {
+        var previous = s_current.Value;
+        s_current.Value = this;
         try
         {
             // ActorFiber 当前采用单 reader mailbox，同一个 Fiber 内消息串行派发。
@@ -149,6 +170,10 @@ public sealed class ActorFiber : IActorEndpoint, IAsyncDisposable
             {
                 _unhandledError?.Invoke(item.Envelope, exception);
             }
+        }
+        finally
+        {
+            s_current.Value = previous;
         }
     }
 

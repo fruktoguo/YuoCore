@@ -6,6 +6,9 @@ namespace YuoCore.Runtime;
 
 public sealed class YuoFiber : IAsyncDisposable, IDisposable
 {
+    // 当前正在执行 Tick 的 Fiber，随 async 上下文流动。
+    // 用于同 Fiber CallAsync / Fiber 内等本 Fiber 驱动的 Timer 等死锁守卫。
+    private static readonly AsyncLocal<YuoFiber?> s_current = new();
     private readonly Channel<Func<YuoFiber, CancellationToken, ValueTask>> _mailbox;
     private readonly CancellationTokenSource _disposeCts = new();
     private int _pendingMessages;
@@ -53,6 +56,9 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     /// </summary>
     public int PendingMessageCount => Volatile.Read(ref _pendingMessages);
 
+    /// <summary>当前执行上下文所属的 Fiber；不在任何 Fiber Tick 内时为 null。</summary>
+    public static YuoFiber? Current => s_current.Value;
+
     public void Start()
     {
         ThrowIfDisposed();
@@ -99,11 +105,22 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
         }
     }
 
-    public async ValueTask<T> CallAsync<T>(Func<YuoFiber, CancellationToken, ValueTask<T>> action, CancellationToken cancellationToken = default)
+    public ValueTask<T> CallAsync<T>(Func<YuoFiber, CancellationToken, ValueTask<T>> action, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(action);
         ThrowIfDisposed();
+        // 同 Fiber 内等待本 Fiber mailbox 必然死锁（drain 被本动作占住），快速失败。
+        if (ReferenceEquals(s_current.Value, this))
+        {
+            throw new InvalidOperationException(
+                $"YuoFiber '{Name}': CallAsync on the executing fiber would deadlock. Use PostAsync or restructure the call chain.");
+        }
 
+        return CallAsyncCore(action, cancellationToken);
+    }
+
+    private async ValueTask<T> CallAsyncCore<T>(Func<YuoFiber, CancellationToken, ValueTask<T>> action, CancellationToken cancellationToken)
+    {
         // CallAsync 是跨 Fiber 同步请求的基础：调用方等待 TaskCompletionSource，
         // 真正的业务代码仍然排进目标 Fiber mailbox，由目标 Fiber 串行执行。
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -137,11 +154,20 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
         ThrowIfDisposed();
         EnsureStarted();
 
-        // mailbox 先于 World.Update 执行，保证本帧收到的命令可以在同一帧进入 ECS 逻辑。
-        // MaxMailboxMessagesPerTick 用来限制突发消息把帧更新完全饿死。
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCts.Token);
-        await DrainMailboxAsync(linkedCts.Token).ConfigureAwait(false);
-        World.Update();
+        var previous = s_current.Value;
+        s_current.Value = this;
+        try
+        {
+            // mailbox 先于 World.Update 执行，保证本帧收到的命令可以在同一帧进入 ECS 逻辑。
+            // MaxMailboxMessagesPerTick 用来限制突发消息把帧更新完全饿死。
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCts.Token);
+            await DrainMailboxAsync(linkedCts.Token).ConfigureAwait(false);
+            World.Update();
+        }
+        finally
+        {
+            s_current.Value = previous;
+        }
     }
 
     public async ValueTask FixedTickAsync(CancellationToken cancellationToken = default)
@@ -149,16 +175,35 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
         ThrowIfDisposed();
         EnsureStarted();
 
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCts.Token);
-        await DrainMailboxAsync(linkedCts.Token).ConfigureAwait(false);
-        World.FixedUpdate();
+        var previous = s_current.Value;
+        s_current.Value = this;
+        try
+        {
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCts.Token);
+            await DrainMailboxAsync(linkedCts.Token).ConfigureAwait(false);
+            World.FixedUpdate();
+        }
+        finally
+        {
+            s_current.Value = previous;
+        }
     }
 
     public void LateTick()
     {
         ThrowIfDisposed();
         EnsureStarted();
-        World.LateUpdate();
+
+        var previous = s_current.Value;
+        s_current.Value = this;
+        try
+        {
+            World.LateUpdate();
+        }
+        finally
+        {
+            s_current.Value = previous;
+        }
     }
 
     public async ValueTask DrainMailboxAsync(CancellationToken cancellationToken = default)

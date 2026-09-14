@@ -2238,3 +2238,15 @@ PendingMessageCount（写入前计数的 Interlocked 计数器，
 阻塞中的 writer 也计入，反映真实投递压力）。
 测试：Runtime.Tests 新增有界背压与计数回归。
 ```
+
+### 同 Fiber Invoke/CallAsync 死锁（已修复）
+
+```text
+问题：在 Fiber Tick 执行上下文内对本 Fiber 调用 CallAsync/InvokeAsync
+必然死锁——单 reader drain 被当前动作占住，等待的完成永远排不进 mailbox；
+唯一自救是外层超时。
+修复：YuoFiber.Current / ActorFiber.Current（AsyncLocal）跟踪执行上下文；
+CallAsync/InvokeAsync 拆出非 async 外壳，同 Fiber 调用同步抛
+InvalidOperationException 快速失败。环形跨 Fiber 等待仍由宿主超时兜底。
+测试：Runtime/Actor 回归覆盖守卫触发与上下文还原。
+```

@@ -35,5 +35,39 @@ public sealed class ActorFiberErrorHandlingTests
         Assert.IsType<InvalidOperationException>(failure.Error);
     }
 
+    [Fact]
+    public async Task SameFiberInvokeFailsFastInsteadOfDeadlocking()
+    {
+        string? marker = null;
+        ActorFiber? self = null;
+        var dispatcher = new DelegateActorMessageDispatcher((envelope, ct) =>
+        {
+            try
+            {
+                _ = self!.InvokeAsync(envelope, ct);
+            }
+            catch (InvalidOperationException)
+            {
+                marker = "guarded";
+            }
+
+            return ValueTask.FromResult<object?>(null);
+        });
+        self = new ActorFiber(9, dispatcher);
+        await using (self)
+        {
+            self.Start();
+            await self.SendAsync(ActorEnvelope.ForMessage(new Ping(new ActorId(9_001))));
+
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (marker is null && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(10);
+            }
+        }
+
+        Assert.Equal("guarded", marker);
+    }
+
     private sealed record Ping(ActorId TargetActorId) : IActorMessage;
 }

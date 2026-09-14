@@ -56,4 +56,31 @@ public sealed class YuoFiberErrorHandlingTests
         await fiber.TickAsync();
         Assert.Equal(0, fiber.PendingMessageCount);
     }
+
+    [Fact]
+    public async Task SameFiberCallAsyncFailsFastInsteadOfDeadlocking()
+    {
+        await using var runtime = new YuoCoreRuntime();
+        var fiber = runtime.Fibers.CreateFiber(new YuoFiberOptions { Id = 43, Name = "self-call-guard" });
+        InvalidOperationException? observed = null;
+        var insideCurrent = false;
+
+        await fiber.PostAsync(f =>
+        {
+            insideCurrent = ReferenceEquals(YuoFiber.Current, f);
+            try
+            {
+                _ = f.CallAsync<int>((_, _) => ValueTask.FromResult(1));
+            }
+            catch (InvalidOperationException e)
+            {
+                observed = e;
+            }
+        });
+        await fiber.TickAsync();
+
+        Assert.True(insideCurrent);
+        Assert.NotNull(observed);
+        Assert.Null(YuoFiber.Current);
+    }
 }
