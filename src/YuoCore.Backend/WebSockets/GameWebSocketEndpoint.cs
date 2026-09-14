@@ -51,7 +51,11 @@ public static class GameWebSocketEndpoint
         {
             while (!context.RequestAborted.IsCancellationRequested && socket.State == WebSocketState.Open)
             {
-                var message = await ReceiveAsync(socket, buffer, context.RequestAborted);
+                var message = await ReceiveAsync(
+                    socket,
+                    buffer,
+                    pushOptions.MaxInboundMessageBytes,
+                    context.RequestAborted);
                 if (message is null) break;
 
                 var decoded = DecodeClientMessage(message);
@@ -322,7 +326,11 @@ public static class GameWebSocketEndpoint
         return new ServerEnvelope { RequestId = requestId, Error = new ErrorResponse { Code = code, Message = message } };
     }
 
-    private static async Task<byte[]?> ReceiveAsync(WebSocket socket, byte[] buffer, CancellationToken cancellationToken)
+    internal static async Task<byte[]?> ReceiveAsync(
+        WebSocket socket,
+        byte[] buffer,
+        int maxMessageBytes,
+        CancellationToken cancellationToken)
     {
         using var stream = new MemoryStream();
         while (true)
@@ -331,6 +339,24 @@ public static class GameWebSocketEndpoint
             if (result.MessageType == WebSocketMessageType.Close) return null;
             if (result.MessageType != WebSocketMessageType.Binary) throw new InvalidOperationException("Only binary protobuf messages are supported.");
             stream.Write(buffer, 0, result.Count);
+            if (stream.Length > maxMessageBytes)
+            {
+                // 分片累计无上限会被慢速客户端当成内存放大器：超限按协议违规关闭。
+                try
+                {
+                    await socket.CloseAsync(
+                        WebSocketCloseStatus.MessageTooBig,
+                        "Inbound message exceeded the configured limit.",
+                        CancellationToken.None);
+                }
+                catch (WebSocketException)
+                {
+                    socket.Abort();
+                }
+
+                return null;
+            }
+
             if (result.EndOfMessage) return stream.ToArray();
         }
     }
