@@ -127,17 +127,12 @@ namespace YuoCore.Ecs
 #endif
             // P1优化：将try-catch移到foreach外部，允许JIT编译器优化循环
             // 异常时中断当前系统的剩余实体执行，但不影响其他系统
-            if (YuoWorld.CloseSystemTry)
+            // 迭代期间 Entities 的成员变更先进入待决缓冲，本轮结束后统一并入，
+            // 避免 Run 内增删组件直接炸掉 HashSet 迭代器。
+            _isIteratingEntities = true;
+            try
             {
-                foreach (var entity in Entities)
-                {
-                    if (CheckCoverSystem(entity)) continue;
-                    RunEntity(entity);
-                }
-            }
-            else
-            {
-                try
+                if (YuoWorld.CloseSystemTry)
                 {
                     foreach (var entity in Entities)
                     {
@@ -145,11 +140,27 @@ namespace YuoCore.Ecs
                         RunEntity(entity);
                     }
                 }
-                catch (Exception e)
+                else
                 {
-                    // 记录异常信息，包含系统名称便于调试
-                    Console.Error.WriteLine($"[YuoECS] System '{SystemName}' execution failed: {e.Message}\n{e.StackTrace}");
+                    try
+                    {
+                        foreach (var entity in Entities)
+                        {
+                            if (CheckCoverSystem(entity)) continue;
+                            RunEntity(entity);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        // 记录异常信息，包含系统名称便于调试
+                        Console.Error.WriteLine($"[YuoECS] System '{SystemName}' execution failed: {e.Message}\n{e.StackTrace}");
+                    }
                 }
+            }
+            finally
+            {
+                _isIteratingEntities = false;
+                ApplyPendingEntityChanges();
             }
 
 #if UNITY_EDITOR
@@ -157,11 +168,40 @@ namespace YuoCore.Ecs
 #endif
         }
 
+        private bool _isIteratingEntities;
+        private HashSet<YuoEntity> _pendingJoinEntities;
+        private HashSet<YuoEntity> _pendingLeaveEntities;
+
+        private void ApplyPendingEntityChanges()
+        {
+            if (_pendingJoinEntities is { Count: > 0 })
+            {
+                foreach (var entity in _pendingJoinEntities)
+                {
+                    Entities.Add(entity);
+                }
+
+                _pendingJoinEntities.Clear();
+            }
+
+            if (_pendingLeaveEntities is { Count: > 0 })
+            {
+                foreach (var entity in _pendingLeaveEntities)
+                {
+                    Entities.Remove(entity);
+                }
+
+                _pendingLeaveEntities.Clear();
+            }
+        }
+
         internal virtual void Clear()
         {
             Entities.Clear();
             systemTags.Clear();
             influenceTypes.Clear();
+            _pendingJoinEntities?.Clear();
+            _pendingLeaveEntities?.Clear();
         }
 
         internal virtual bool CheckValidEntity(YuoEntity entity)
@@ -171,16 +211,33 @@ namespace YuoCore.Ecs
                 if (!entity.HasComponent(influenceType)) return false;
             }
 
-            Entities.Add(entity);
+            if (_isIteratingEntities)
+            {
+                (_pendingJoinEntities ??= new()).Add(entity);
+                _pendingLeaveEntities?.Remove(entity);
+            }
+            else
+            {
+                Entities.Add(entity);
+            }
+
             return true;
         }
 
         internal void RemoveComponent(YuoEntity entity)
         {
-            if (Entities.Contains(entity))
+            if (_isIteratingEntities)
             {
-                Entities.Remove(entity);
+                if (Entities.Contains(entity) || (_pendingJoinEntities?.Contains(entity) ?? false))
+                {
+                    (_pendingLeaveEntities ??= new()).Add(entity);
+                    _pendingJoinEntities?.Remove(entity);
+                }
+
+                return;
             }
+
+            Entities.Remove(entity);
         }
 
         internal bool m_Run(YuoEntity entity)

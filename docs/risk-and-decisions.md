@@ -2177,3 +2177,15 @@ RemoveItem 在键缺失时还会白建空集合造成泄漏。
 修复：索引器返回类型收窄为 IReadOnlyList/IReadOnlySet/IReadOnlyDictionary，
 写入统一走 AddItem/RemoveItem/TryGetValue；RemoveItem 缺键直接返回 false 不再建空壳。
 ```
+
+### 系统迭代期间 Entities 成员变更中断本轮剩余实体（已修复）
+
+```text
+问题：m_Run 遍历 HashSet Entities 期间，Run 内 AddComponent 触发
+CheckValidEntity→Entities.Add 会让迭代器 bump version 直接抛错中断，
+本轮剩余实体被静默漏跑（外层 catch 吞掉后语义为半更新）。
+修复：迭代期间成员变更进 _pendingJoin/_pendingLeave 待决缓冲，
+本轮结束统一并入；Remove 路径同步走待决语义保持一致。
+测试：Game.Tests 新增迭代安全回归 2 例（Add 中断路径在旧实现下失败）。
+备注：.NET 的 HashSet/Dictionary 迭代器对 Remove 不抛错，真实缺陷路径是 Add。
+```
