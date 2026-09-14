@@ -40,12 +40,12 @@ namespace YuoCore.Ecs
             // $"Add Entity{EntityData.Id}".Log();
         }
 
-        public YuoEntity(string name) : this(name.GetHashCode())
+        public YuoEntity(string name) : this(IDGenerate.GetID(name))
         {
             EntityName = name;
         }
 
-        public YuoEntity(YuoWorld world, string name) : this(world, name.GetHashCode())
+        public YuoEntity(YuoWorld world, string name) : this(world, IDGenerate.GetID(name))
         {
             EntityName = name;
         }

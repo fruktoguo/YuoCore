@@ -2201,3 +2201,14 @@ IDGenerate 绑定传入的 TimeInfo；挂机系统改用世界时钟。
 附带修复：ServerNow/ServerFrameTime 误用 Instance 的时差而非 this。
 测试：Game.Tests 新增固定步长时钟回归（旧实现下挂机产出为 0 会失败）。
 ```
+
+### 命名实体 ID 使用进程随机哈希（已修复）
+
+```text
+问题：命名实体与命名子实体使用 string.GetHashCode() 生成 ID，
+该值按进程随机化，跨进程/跨机器不一致，且可能碰撞。
+修复：全部改用已有的确定性 FNV-1a 实现 IDGenerate.GetID(name)，
+写入与查找路径统一；同时实体实例 ID 改经 world.IdGenerate，
+允许每世界注入生成器与确定性时钟配合。
+测试：Game.Tests 新增 FNV 期望值钉死 + 命名实体查找回归。
+```

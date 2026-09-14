@@ -411,7 +411,7 @@ namespace YuoCore.Ecs
 
         public T AddChild<T>(string name) where T : YuoComponent, new()
         {
-            var com = AddChild(typeof(T), name.GetHashCode()) as T;
+            var com = AddChild(typeof(T), IDGenerate.GetID(name)) as T;
             if (com != null) com.Entity.EntityName = name;
             return com;
         }
@@ -435,7 +435,7 @@ namespace YuoCore.Ecs
 
         public YuoEntity AddChild(string entityName)
         {
-            var child = AddChild(entityName.GetHashCode());
+            var child = AddChild(IDGenerate.GetID(entityName));
             child.EntityName = entityName;
             return child;
         }

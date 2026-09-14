@@ -24,7 +24,7 @@ namespace YuoCore.Ecs
         /// </summary>
         public YuoEntity GetEntity(string entityName)
         {
-            Entities.TryGetValue(entityName.GetHashCode(), out YuoEntity entity);
+            Entities.TryGetValue(IDGenerate.GetID(entityName), out YuoEntity entity);
             return entity;
         }
 
