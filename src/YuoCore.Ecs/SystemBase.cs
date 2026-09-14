@@ -125,10 +125,10 @@ namespace YuoCore.Ecs
 #if UNITY_EDITOR
             StartClock();
 #endif
-            // P1优化：将try-catch移到foreach外部，允许JIT编译器优化循环
-            // 异常时中断当前系统的剩余实体执行，但不影响其他系统
             // 迭代期间 Entities 的成员变更先进入待决缓冲，本轮结束后统一并入，
             // 避免 Run 内增删组件直接炸掉 HashSet 迭代器。
+            // 异常按实体隔离：单个实体失败只跳过该实体并保留完整证据，
+            // 不再中断本轮剩余实体（与单实体 m_Run 的隔离语义一致）。
             _isIteratingEntities = true;
             try
             {
@@ -142,18 +142,17 @@ namespace YuoCore.Ecs
                 }
                 else
                 {
-                    try
+                    foreach (var entity in Entities)
                     {
-                        foreach (var entity in Entities)
+                        if (CheckCoverSystem(entity)) continue;
+                        try
                         {
-                            if (CheckCoverSystem(entity)) continue;
                             RunEntity(entity);
                         }
-                    }
-                    catch (Exception e)
-                    {
-                        // 记录异常信息，包含系统名称便于调试
-                        Console.Error.WriteLine($"[YuoECS] System '{SystemName}' execution failed: {e.Message}\n{e.StackTrace}");
+                        catch (Exception e)
+                        {
+                            Console.Error.WriteLine($"[YuoECS] System '{SystemName}' failed on entity {entity.EntityName}(ID:{entity.ID}): {e.Message}\n{e.StackTrace}");
+                        }
                     }
                 }
             }

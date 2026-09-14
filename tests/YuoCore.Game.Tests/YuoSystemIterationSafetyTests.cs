@@ -68,9 +68,54 @@ public sealed class YuoSystemIterationSafetyTests
         }
     }
 
+    [Fact]
+    public void Entity_exception_does_not_abort_remaining_entities()
+    {
+        var world = new YuoWorld();
+        world.OnInit();
+
+        try
+        {
+            var e1 = new YuoEntity(world);
+            var e2 = new YuoEntity(world);
+            var e3 = new YuoEntity(world);
+            e1.AddComponent<IterationFlagComponent>();
+            e2.AddComponent<IterationFlagComponent>();
+            e3.AddComponent<IterationFlagComponent>();
+
+            var system = world.GetAllSystem.OfType<ThrowOnSecondEntitySystem>().Single();
+            system.FailEntity = e2;
+
+            world.Update();
+
+            // e2 抛异常不再中断 e3；本轮三个实体都进了 Run。
+            Assert.Equal(3, system.RunCount);
+        }
+        finally
+        {
+            world.OnDestroy();
+        }
+    }
+
     public sealed class IterationFlagComponent : YuoComponent;
 
     public sealed class IterationTempComponent : YuoComponent;
+
+    /// <summary>对指定实体抛异常，验证异常被隔离在逐实体粒度。</summary>
+    public sealed class ThrowOnSecondEntitySystem : YuoSystem<IterationFlagComponent>, IUpdate
+    {
+        public int RunCount;
+        public YuoEntity? FailEntity;
+
+        public override void Run(IterationFlagComponent flag)
+        {
+            RunCount++;
+            if (flag.Entity == FailEntity)
+            {
+                throw new InvalidOperationException("simulated per-entity failure");
+            }
+        }
+    }
 
     /// <summary>
     /// Run 中创建同样匹配本系统的新实体，触发 CheckValidEntity→Entities.Add 迭代期写入。
