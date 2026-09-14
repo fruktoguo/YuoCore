@@ -123,6 +123,43 @@ public sealed class YuoPersistenceQueueTests
     }
 
     [Fact]
+    public async Task Queue_enqueue_batch_reports_committed_prefix_on_cancel()
+    {
+        var queue = new YuoPersistenceQueue(capacity: 1);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+        var exception = await Assert.ThrowsAsync<YuoPersistenceBatchEnqueueException>(async () =>
+            await queue.EnqueueBatchAsync([
+                CreateSnapshotCommand("committed"),
+                CreateSnapshotCommand("blocked")
+            ], cts.Token));
+
+        Assert.Equal(1, exception.EnqueuedCount);
+        Assert.IsType<OperationCanceledException>(exception.InnerException);
+
+        var drained = queue.TryDequeueBatch(maxCount: 8);
+        var saved = Assert.IsType<SaveSnapshotCommand>(Assert.Single(drained));
+        Assert.Equal("committed", saved.Snapshot.Id);
+    }
+
+    [Fact]
+    public async Task Queue_enqueue_batch_reports_committed_prefix_on_close()
+    {
+        var queue = new YuoPersistenceQueue(capacity: 1);
+
+        var enqueueTask = queue.EnqueueBatchAsync([
+            CreateSnapshotCommand("committed"),
+            CreateSnapshotCommand("blocked")
+        ]).AsTask();
+        await Task.Delay(50);
+        queue.TryComplete();
+
+        var exception = await Assert.ThrowsAsync<YuoPersistenceBatchEnqueueException>(() => enqueueTask);
+        Assert.Equal(1, exception.EnqueuedCount);
+        Assert.IsType<ChannelClosedException>(exception.InnerException);
+    }
+
+    [Fact]
     public async Task Queue_complete_rejects_future_writes_but_keeps_pending_commands_drainable()
     {
         var queue = new YuoPersistenceQueue(capacity: 4);

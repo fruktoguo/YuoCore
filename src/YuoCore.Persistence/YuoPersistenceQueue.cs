@@ -37,6 +37,22 @@ public sealed record YuoOutboxPersistenceCommand : YuoPersistenceCommand
     public YuoPersistenceCommand Inner { get; }
 }
 
+/// <summary>
+/// 批量入队在中途停止且已有前缀提交时抛出。EnqueuedCount 为已成功入队的命令数，
+/// 调用方重试同一批次时必须跳过该前缀，否则已提交命令会被重复持久化。
+/// InnerException 保留原始失败原因（取消、写端关闭等）。
+/// </summary>
+public sealed class YuoPersistenceBatchEnqueueException : Exception
+{
+    public YuoPersistenceBatchEnqueueException(int enqueuedCount, Exception innerException)
+        : base($"Batch enqueue stopped after {enqueuedCount} committed command(s); skip the committed prefix before retrying.", innerException)
+    {
+        EnqueuedCount = enqueuedCount;
+    }
+
+    public int EnqueuedCount { get; }
+}
+
 public sealed record YuoPersistenceQueueStats(
     int Capacity,
     long PendingCount,
@@ -122,18 +138,26 @@ public sealed class YuoPersistenceQueue
 
         // 批量入口仍逐条写入 bounded channel，保持背压和取消语义不变。
         // TryWrite 负责空闲队列的热路径，避免压测/批量保存时每条命令都创建异步状态。
+        // Channel 不支持回滚：一旦前缀已提交，中途失败必须显式携带已入队数量。
         for (var i = 0; i < commands.Count; i++)
         {
             var command = commands[i];
-            cancellationToken.ThrowIfCancellationRequested();
-            if (_channel.Writer.TryWrite(command))
+            try
             {
-                MarkEnqueued();
-                continue;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+                if (_channel.Writer.TryWrite(command))
+                {
+                    MarkEnqueued();
+                    continue;
+                }
 
-            await _channel.Writer.WriteAsync(command, cancellationToken).ConfigureAwait(false);
-            MarkEnqueued();
+                await _channel.Writer.WriteAsync(command, cancellationToken).ConfigureAwait(false);
+                MarkEnqueued();
+            }
+            catch (Exception exception) when (i > 0)
+            {
+                throw new YuoPersistenceBatchEnqueueException(i, exception);
+            }
         }
     }
 
