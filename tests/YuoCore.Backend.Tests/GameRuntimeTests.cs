@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using YuoCore.Backend.Game;
+using YuoCore.Backend.Infrastructure;
 using YuoCore.Game;
 using YuoCore.StateSync;
 
@@ -7,6 +8,38 @@ namespace YuoCore.Backend.Tests;
 
 public sealed class GameRuntimeTests
 {
+    [Fact]
+    public async Task Persist_player_command_saves_online_snapshot()
+    {
+        using var runtime = new GameRuntime(Options.Create(new GameOptions { TickRate = 10, ShardCount = 2 }));
+        runtime.Start();
+        var player = runtime.LoginPlayer("persist-target", null, "session-p");
+        var repository = new RecordingSnapshotRepository();
+        var processor = new GameCommandProcessor(
+            runtime,
+            new SnapshotPersistenceService(repository, new NoopPlayerSnapshotCache()));
+
+        var result = await processor.ApplyAsync(new YuoPersistPlayerCommand(player.PlayerId));
+
+        Assert.True(result.Success);
+        var saved = Assert.IsType<YuoPlayerSnapshotDto>(repository.LastSaved);
+        Assert.Equal(player.PlayerId, saved.PlayerId);
+    }
+
+    [Fact]
+    public async Task Persist_player_command_without_persistence_reports_unsupported()
+    {
+        using var runtime = new GameRuntime(Options.Create(new GameOptions { TickRate = 10, ShardCount = 2 }));
+        runtime.Start();
+        var player = runtime.CreatePlayer("persist-unsupported");
+        var processor = new GameCommandProcessor(runtime);
+
+        var result = await processor.ApplyAsync(new YuoPersistPlayerCommand(player.PlayerId));
+
+        Assert.False(result.Success);
+        Assert.Equal("unsupported_command", result.ErrorCode);
+    }
+
     [Fact]
     public void Runtime_can_seed_10k_players_and_tick()
     {
@@ -79,7 +112,7 @@ public sealed class GameRuntimeTests
 
         var queued = await queue.Reader.ReadAsync();
         Assert.True(queued.ExpectsResult);
-        var result = processor.Apply(queued.Command);
+        var result = await processor.ApplyAsync(queued.Command);
         Assert.True(queued.TryComplete(result));
 
         var completed = await pending;
@@ -102,7 +135,7 @@ public sealed class GameRuntimeTests
 
         var queued = await queue.Reader.ReadAsync();
         Assert.False(queued.ExpectsResult);
-        var result = processor.Apply(queued.Command);
+        var result = await processor.ApplyAsync(queued.Command);
         Assert.False(queued.TryComplete(result));
 
         runtime.Tick();
@@ -264,5 +297,21 @@ public sealed class GameRuntimeTests
             change.Kind != YuoStateChangeKind.Leave);
         Assert.Equal(firstCellInitial.Delta.Tick, oldCell.Delta.BaseTick);
         Assert.Equal(secondCellInitial.Delta.Tick, newCell.Delta.BaseTick);
+    }
+}
+
+file sealed class RecordingSnapshotRepository : IPlayerSnapshotRepository
+{
+    public YuoPlayerSnapshotDto? LastSaved { get; private set; }
+
+    public Task SaveAsync(YuoPlayerSnapshotDto snapshot, CancellationToken cancellationToken = default)
+    {
+        LastSaved = snapshot;
+        return Task.CompletedTask;
+    }
+
+    public Task<YuoPlayerSnapshotDto?> GetAsync(Guid playerId, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(LastSaved is { } saved && saved.PlayerId == playerId ? saved : null);
     }
 }

@@ -1,3 +1,4 @@
+using YuoCore.Backend.Infrastructure;
 using YuoCore.Game;
 
 namespace YuoCore.Backend.Game;
@@ -6,11 +7,13 @@ namespace YuoCore.Backend.Game;
 /// 示例后端的游戏命令处理器。
 /// Gateway、HTTP、后台任务只产生 YuoGameCommand；真正如何调用 GameRuntime 集中在这里，避免协议层散落业务分支。
 /// </summary>
-public sealed class GameCommandProcessor(GameRuntime runtime)
+public sealed class GameCommandProcessor(GameRuntime runtime, SnapshotPersistenceService? persistence = null)
 {
     private readonly GameRuntime _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
 
-    public YuoGameCommandResult Apply(YuoGameCommand command)
+    public async ValueTask<YuoGameCommandResult> ApplyAsync(
+        YuoGameCommand command,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
 
@@ -20,8 +23,27 @@ public sealed class GameCommandProcessor(GameRuntime runtime)
             YuoEnterMapCommand enter => ApplyEnterMap(enter),
             YuoMoveCommand move => ApplyMove(move),
             YuoDisconnectCommand disconnect => ApplyDisconnect(disconnect),
+            YuoPersistPlayerCommand persist => await ApplyPersistAsync(persist, cancellationToken).ConfigureAwait(false),
             _ => new YuoGameCommandResult(false, "unsupported_command", $"Unsupported game command: {command.GetType().FullName}.")
         };
+    }
+
+    private async ValueTask<YuoGameCommandResult> ApplyPersistAsync(
+        YuoPersistPlayerCommand command,
+        CancellationToken cancellationToken)
+    {
+        if (persistence is null)
+        {
+            return new YuoGameCommandResult(false, "unsupported_command", "persistence service is not configured.");
+        }
+
+        if (!_runtime.TryGetSnapshot(command.PlayerId, out var snapshot))
+        {
+            return YuoGameCommandResult.NotFound("player not found");
+        }
+
+        await persistence.SaveAsync(snapshot, cancellationToken).ConfigureAwait(false);
+        return YuoGameCommandResult.Ok(snapshot);
     }
 
     private YuoGameCommandResult ApplyClick(YuoClickCommand command)

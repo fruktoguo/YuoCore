@@ -499,6 +499,25 @@ public sealed class GameRuntime : IDisposable
         return result;
     }
 
+    /// <summary>周期存档读路径：导出所有在线玩家快照，调用方负责写库。</summary>
+    public IReadOnlyList<YuoPlayerSnapshotDto> SnapshotOnlinePlayers()
+    {
+        lock (_gate)
+        {
+            EnsureStarted();
+            var result = new List<YuoPlayerSnapshotDto>(_players.Count);
+            foreach (var playerRef in _players.Values)
+            {
+                if (playerRef.Entity.GetComponent<YuoPlayerPresenceComponent>().Online)
+                {
+                    result.Add(Snapshot(playerRef.Entity));
+                }
+            }
+
+            return result;
+        }
+    }
+
     public void Tick()
     {
         lock (_gate)

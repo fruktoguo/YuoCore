@@ -10,6 +10,7 @@ public sealed class GameLoopService : BackgroundService
     private readonly GameCommandProcessor _processor;
     private readonly ILogger<GameLoopService> _logger;
     private readonly GameOptions _options;
+    private long _ticksSincePersist;
 
     public GameLoopService(
         GameRuntime runtime,
@@ -37,7 +38,10 @@ public sealed class GameLoopService : BackgroundService
             List<YuoQueuedGameCommand>? completeAfterTick = null;
             while (_queue.Reader.TryRead(out var queued))
             {
-                Apply(queued, ref completeAfterTick);
+                if (await ApplyAsync(queued, stoppingToken) is { } deferred)
+                {
+                    (completeAfterTick ??= []).Add(deferred);
+                }
             }
 
             _runtime.Tick();
@@ -46,23 +50,55 @@ public sealed class GameLoopService : BackgroundService
             {
                 CompleteAfterTick(completeAfterTick);
             }
+
+            if (_options.PersistEveryTicks > 0 && ++_ticksSincePersist >= _options.PersistEveryTicks)
+            {
+                _ticksSincePersist = 0;
+                await PersistOnlinePlayersAsync(stoppingToken);
+            }
         }
     }
 
-    private void Apply(
+    private async Task PersistOnlinePlayersAsync(CancellationToken cancellationToken)
+    {
+        foreach (var snapshot in _runtime.SnapshotOnlinePlayers())
+        {
+            try
+            {
+                var result = await _processor.ApplyAsync(
+                    new YuoPersistPlayerCommand(snapshot.PlayerId),
+                    cancellationToken);
+                if (!result.Success)
+                {
+                    _logger.LogWarning(
+                        "Periodic persist skipped player {PlayerId}: {Error}",
+                        snapshot.PlayerId,
+                        result.ErrorMessage);
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Periodic persist failed for player {PlayerId}", snapshot.PlayerId);
+            }
+        }
+    }
+
+    private async Task<YuoQueuedGameCommand?> ApplyAsync(
         YuoQueuedGameCommand queued,
-        ref List<YuoQueuedGameCommand>? completeAfterTick)
+        CancellationToken cancellationToken)
     {
         try
         {
-            var result = _processor.Apply(queued.Command);
+            var result = await _processor.ApplyAsync(queued.Command, cancellationToken);
             if (queued.ExpectsResult &&
                 queued.Command is YuoClickCommand &&
                 result.Success)
             {
-                completeAfterTick ??= [];
-                completeAfterTick.Add(queued);
-                return;
+                return queued;
             }
 
             queued.TryComplete(result);
@@ -72,6 +108,8 @@ public sealed class GameLoopService : BackgroundService
             queued.TryFail(ex);
             _logger.LogError(ex, "Failed to apply game command {CommandType}", queued.Command.GetType().FullName);
         }
+
+        return null;
     }
 
     private void CompleteAfterTick(IReadOnlyList<YuoQueuedGameCommand> queuedCommands)
