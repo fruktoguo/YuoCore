@@ -77,8 +77,6 @@ namespace YuoCore.Ecs
             {
                 Instance = null;
             }
-            // 手动触发垃圾回收
-            GC.Collect();
             "Game Exit".Log();
         }
 
