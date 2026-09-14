@@ -72,3 +72,31 @@ public sealed class YuoFiberTimerHostTests
         public DateTimeOffset UtcNow { get; set; } = utcNow;
     }
 }
+
+// 追加回归：Fiber 执行上下文内 await 本 Fiber 驱动的 Timer 必须快速失败而非死锁
+public sealed class YuoFiberTimerDeadlockGuardTests
+{
+    [Fact]
+    public async Task Awaiting_timer_inside_owning_fiber_fails_fast()
+    {
+        await using var runtime = new YuoCoreRuntime();
+        var fiber = runtime.Fibers.CreateFiber(new YuoFiberOptions { Id = 105, Name = "timer-deadlock-guard" });
+        var host = new YuoFiberTimerHost(fiber);
+        InvalidOperationException? observed = null;
+
+        await fiber.PostAsync(f =>
+        {
+            try
+            {
+                _ = host.DelayAsync(TimeSpan.FromSeconds(1));
+            }
+            catch (InvalidOperationException e)
+            {
+                observed = e;
+            }
+        });
+        await fiber.TickAsync();
+
+        Assert.NotNull(observed);
+    }
+}

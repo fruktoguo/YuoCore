@@ -2250,3 +2250,15 @@ CallAsync/InvokeAsync 拆出非 async 外壳，同 Fiber 调用同步抛
 InvalidOperationException 快速失败。环形跨 Fiber 等待仍由宿主超时兜底。
 测试：Runtime/Actor 回归覆盖守卫触发与上下文还原。
 ```
+
+### Fiber 内 await 本 Fiber 驱动的 Timer 死锁（已修复）
+
+```text
+问题：Fiber mailbox 动作内 await YuoFiberTimerHost.DelayAsync/WaitUntilAsync
+必然死锁——Timer 完成需要宿主再次 TickAsync 推进调度器，
+而 TickAsync 正被本动作占住。
+修复：DelayAsync/WaitUntilAsync 在执行上下文属于本 Fiber 时同步抛
+InvalidOperationException。ScheduleOnce/ScheduleRepeated 仅注册不等待，
+不受影响。
+测试：Runtime.Timers.Tests 回归覆盖守卫触发。
+```

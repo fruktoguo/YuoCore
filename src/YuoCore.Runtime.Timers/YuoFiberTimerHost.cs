@@ -27,12 +27,25 @@ public sealed class YuoFiberTimerHost
 
     public ValueTask DelayAsync(TimeSpan delay, CancellationToken cancellationToken = default)
     {
+        ThrowIfInsideOwningFiber();
         return Timers.DelayAsync(delay, cancellationToken);
     }
 
     public ValueTask WaitUntilAsync(DateTimeOffset dueAt, CancellationToken cancellationToken = default)
     {
+        ThrowIfInsideOwningFiber();
         return Timers.WaitUntilAsync(dueAt, cancellationToken);
+    }
+
+    // Fiber 执行上下文内 await 本 Fiber 驱动的 Timer 必然死锁：
+    // 完成 Timer 需要宿主再次 TickAsync，而 TickAsync 正被本动作占住。
+    private void ThrowIfInsideOwningFiber()
+    {
+        if (ReferenceEquals(YuoFiber.Current, Fiber))
+        {
+            throw new InvalidOperationException(
+                $"YuoFiber '{Fiber.Name}': awaiting a timer driven by the executing fiber would deadlock. Schedule a callback or await an external clock instead.");
+        }
     }
 
     public YuoTimerId ScheduleOnce(
