@@ -25,6 +25,9 @@ public sealed class YuoGatewayDispatchPipeline(IYuoGatewayDispatcher inner) : IY
             return Error(message, session.NextServerSeq(), YuoError.Invalid("stale client sequence."));
         }
 
+        // 每条合法入站消息都是连接活性证据；空闲踢除由宿主按 LastHeartbeatAt 判定。
+        session.TouchHeartbeat(DateTimeOffset.UtcNow);
+
         try
         {
             var response = await _inner.DispatchAsync(session, message, cancellationToken).ConfigureAwait(false);

@@ -6,6 +6,22 @@ namespace YuoCore.Gateway.Tests;
 public sealed class YuoGatewayDispatchPipelineTests
 {
     [Fact]
+    public async Task Pipeline_touches_heartbeat_on_each_accepted_message()
+    {
+        var session = new YuoGatewaySession(now: DateTimeOffset.UnixEpoch);
+        var pipeline = new YuoGatewayDispatchPipeline(new EchoDispatcher());
+        var message = new YuoGatewayInboundMessage(1, 10, 100, 1, ReadOnlyMemory<byte>.Empty);
+
+        await pipeline.DispatchAsync(session, message);
+        var afterFirst = session.LastHeartbeatAt;
+
+        Assert.True(afterFirst > DateTimeOffset.UnixEpoch);
+
+        await pipeline.DispatchAsync(session, message with { ClientSeq = 2 });
+        Assert.True(session.LastHeartbeatAt >= afterFirst);
+    }
+
+    [Fact]
     public async Task Pipeline_rejects_replayed_client_sequence()
     {
         var session = new YuoGatewaySession();

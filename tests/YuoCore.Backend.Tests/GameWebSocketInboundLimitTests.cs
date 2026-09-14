@@ -16,6 +16,7 @@ public sealed class GameWebSocketInboundLimitTests
             socket,
             new byte[1024],
             maxMessageBytes: 1024,
+            idleTimeoutMs: 0,
             CancellationToken.None);
 
         Assert.Null(result);
@@ -34,6 +35,7 @@ public sealed class GameWebSocketInboundLimitTests
             socket,
             new byte[1024],
             maxMessageBytes: 1024,
+            idleTimeoutMs: 0,
             CancellationToken.None);
 
         Assert.NotNull(result);
@@ -41,9 +43,46 @@ public sealed class GameWebSocketInboundLimitTests
         Assert.Null(socket.CloseStatus);
     }
 
+    [Fact]
+    public async Task Receive_closes_connection_after_idle_timeout()
+    {
+        var socket = new ScriptedWebSocket { WaitForFramesWhenEmpty = true };
+
+        var result = await GameWebSocketEndpoint.ReceiveAsync(
+            socket,
+            new byte[1024],
+            maxMessageBytes: 1024,
+            idleTimeoutMs: 50,
+            CancellationToken.None);
+
+        Assert.Null(result);
+        Assert.Equal(WebSocketCloseStatus.PolicyViolation, socket.CloseStatus);
+        Assert.Equal(WebSocketState.Closed, socket.State);
+    }
+
+    [Fact]
+    public async Task Receive_resets_idle_timer_between_fragments()
+    {
+        var socket = new ScriptedWebSocket();
+        socket.EnqueueBinary(new byte[10], endOfMessage: false);
+        socket.EnqueueBinary(new byte[10], endOfMessage: true);
+
+        var result = await GameWebSocketEndpoint.ReceiveAsync(
+            socket,
+            new byte[1024],
+            maxMessageBytes: 1024,
+            idleTimeoutMs: 60_000,
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal(20, result.Length);
+    }
+
     private sealed class ScriptedWebSocket : WebSocket
     {
         private readonly Queue<(byte[] Payload, bool EndOfMessage)> _frames = new();
+
+        public bool WaitForFramesWhenEmpty { get; set; }
 
         public void EnqueueBinary(byte[] payload, bool endOfMessage)
         {
@@ -94,6 +133,16 @@ public sealed class GameWebSocketInboundLimitTests
             ArraySegment<byte> buffer,
             CancellationToken cancellationToken)
         {
+            if (_frames.Count == 0 && WaitForFramesWhenEmpty)
+            {
+                return Task.Delay(Timeout.Infinite, cancellationToken)
+                    .ContinueWith(
+                        _ => new WebSocketReceiveResult(0, WebSocketMessageType.Close, true),
+                        CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnRanToCompletion,
+                        TaskScheduler.Default);
+            }
+
             if (_frames.Count == 0)
             {
                 return Task.FromResult(new WebSocketReceiveResult(0, WebSocketMessageType.Close, true));

@@ -19,6 +19,9 @@ public sealed class GameWebSocketPushOptions
     /// <summary>单条客户端消息（含分片累计）的最大字节数，超限即按 MessageTooBig 关闭连接。</summary>
     public int MaxInboundMessageBytes { get; set; } = 256 * 1024;
 
+    /// <summary>入站空闲超时（毫秒）；超过该时间无任何客户端消息即关闭连接。0 表示禁用。</summary>
+    public int IdleTimeoutMs { get; set; }
+
     public void Validate()
     {
         if (PollIntervalMs <= 0)
@@ -39,6 +42,11 @@ public sealed class GameWebSocketPushOptions
         if (MaxInboundMessageBytes <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(MaxInboundMessageBytes), "max inbound message bytes must be greater than zero.");
+        }
+
+        if (IdleTimeoutMs < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(IdleTimeoutMs), "idle timeout must not be negative.");
         }
 
         if (!Enum.IsDefined(StateSyncMode))

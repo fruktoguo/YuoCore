@@ -55,6 +55,7 @@ public static class GameWebSocketEndpoint
                     socket,
                     buffer,
                     pushOptions.MaxInboundMessageBytes,
+                    pushOptions.IdleTimeoutMs,
                     context.RequestAborted);
                 if (message is null) break;
 
@@ -330,12 +331,41 @@ public static class GameWebSocketEndpoint
         WebSocket socket,
         byte[] buffer,
         int maxMessageBytes,
+        int idleTimeoutMs,
         CancellationToken cancellationToken)
     {
         using var stream = new MemoryStream();
+        using var idleCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         while (true)
         {
-            var result = await socket.ReceiveAsync(buffer, cancellationToken);
+            if (idleTimeoutMs > 0)
+            {
+                // 每轮帧接收都重置空闲计时；超时未收到任何字节即按违规关闭连接。
+                idleCts.CancelAfter(TimeSpan.FromMilliseconds(idleTimeoutMs));
+            }
+
+            WebSocketReceiveResult result;
+            try
+            {
+                result = await socket.ReceiveAsync(buffer, idleCts.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await socket.CloseAsync(
+                        WebSocketCloseStatus.PolicyViolation,
+                        "Idle connection timed out.",
+                        CancellationToken.None);
+                }
+                catch (WebSocketException)
+                {
+                    socket.Abort();
+                }
+
+                return null;
+            }
+
             if (result.MessageType == WebSocketMessageType.Close) return null;
             if (result.MessageType != WebSocketMessageType.Binary) throw new InvalidOperationException("Only binary protobuf messages are supported.");
             stream.Write(buffer, 0, result.Count);
