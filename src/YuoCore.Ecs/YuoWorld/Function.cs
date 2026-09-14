@@ -196,6 +196,7 @@ namespace YuoCore.Ecs
 
             systemsOfComponent.Clear();
             systemsOfTag.Clear();
+            systemDic.Clear();
 
             foreach (var system in allSystem)
             {

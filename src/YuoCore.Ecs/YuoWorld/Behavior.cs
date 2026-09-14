@@ -67,6 +67,7 @@ namespace YuoCore.Ecs
             systemsOfTag.Clear();
             systemsOfComponent.Clear();
             systemsOfBaseComponent.Clear();
+            systemDic.Clear();
             allSystem.Clear();
 
             // 清除所有场景
