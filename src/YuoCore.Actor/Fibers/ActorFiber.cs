@@ -7,13 +7,19 @@ public sealed class ActorFiber : IActorEndpoint, IAsyncDisposable
     private readonly Channel<MailboxItem> _mailbox;
     private readonly IActorMessageDispatcher _dispatcher;
     private readonly CancellationTokenSource _stop = new();
+    private readonly Action<ActorEnvelope, Exception>? _unhandledError;
     private Task? _runTask;
 
-    public ActorFiber(int fiberId, IActorMessageDispatcher dispatcher, string nodeId = "local")
+    public ActorFiber(
+        int fiberId,
+        IActorMessageDispatcher dispatcher,
+        string nodeId = "local",
+        Action<ActorEnvelope, Exception>? onUnhandledError = null)
     {
         FiberId = fiberId;
         NodeId = nodeId ?? throw new ArgumentNullException(nameof(nodeId));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        _unhandledError = onUnhandledError;
         _mailbox = Channel.CreateUnbounded<MailboxItem>(new UnboundedChannelOptions
         {
             SingleReader = true,
@@ -115,7 +121,9 @@ public sealed class ActorFiber : IActorEndpoint, IAsyncDisposable
             }
             else
             {
-                // Fire-and-forget actor messages must not tear down the fiber loop.
+                // Fire-and-forget actor messages must not tear down the fiber loop,
+                // 但异常必须经过出口可见，不允许静默吞掉。
+                _unhandledError?.Invoke(item.Envelope, exception);
             }
         }
         catch (Exception exception)
@@ -128,7 +136,7 @@ public sealed class ActorFiber : IActorEndpoint, IAsyncDisposable
             }
             else
             {
-                // Fire-and-forget actor messages must not tear down the fiber loop.
+                _unhandledError?.Invoke(item.Envelope, exception);
             }
         }
     }

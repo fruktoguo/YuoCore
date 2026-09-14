@@ -66,7 +66,10 @@ namespace YuoCore.Ecs
 
         private long epoch2022;
 
-        private int instanceIdValue;
+        // 计数器进程级共享：各世界生成器的时间分量可不同，但低 32 位必须全局唯一，
+        // 否则同秒内两个世界会产出相同实体 ID。
+        // 需要严格确定性序列（回放/补算）的宿主应注入自定义 IDGenerate 子类。
+        private static int s_instanceIdValue;
 
         private uint TimeSince2022()
         {
@@ -83,10 +86,10 @@ namespace YuoCore.Ecs
             return (long)result;
         }
 
-        public long GenerateInstanceId()
+        public virtual long GenerateInstanceId()
         {
             uint time = this.TimeSince2022();
-            uint v = (uint)Interlocked.Add(ref this.instanceIdValue, 1);
+            uint v = (uint)Interlocked.Add(ref s_instanceIdValue, 1);
             return ToLong(time, v);
         }
     }

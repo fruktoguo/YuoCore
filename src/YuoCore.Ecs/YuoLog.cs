@@ -47,7 +47,7 @@ namespace YuoCore.Ecs.Log
             public abstract T Error<T>(T msg);
         }
 
-        internal static T Log<T>(this T obj)
+        public static T Log<T>(this T obj)
         {
             if (!openDebug) return obj;
             if (IsEditor)
@@ -60,7 +60,7 @@ namespace YuoCore.Ecs.Log
             return obj;
         }
 
-        internal static T LogError<T>(this T obj)
+        public static T LogError<T>(this T obj)
         {
             if (!openDebug) return obj;
             if (IsEditor)

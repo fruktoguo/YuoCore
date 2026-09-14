@@ -85,6 +85,29 @@ public sealed class YuoFiberActorEndpointTests
         Assert.Equal(5, applied);
     }
 
+    [Fact]
+    public async Task FiberActorEndpointSendFailureReachesUnhandledException()
+    {
+        var errors = new List<Exception>();
+        await using var runtime = new YuoCoreRuntime();
+        var fiber = runtime.Fibers.CreateFiber(new YuoFiberOptions
+        {
+            Id = 24,
+            Name = "actor-send-error-egress",
+            UnhandledException = (_, e) => errors.Add(e)
+        });
+        var endpoint = new YuoFiberActorEndpoint(
+            fiber,
+            new DelegateActorMessageDispatcher((_, _) =>
+                throw new InvalidOperationException("expected send failure.")));
+
+        await endpoint.SendAsync(ActorEnvelope.ForMessage(new FailSend(new ActorId(24_001))));
+        await fiber.TickAsync();
+
+        Assert.Single(errors);
+        Assert.IsType<InvalidOperationException>(errors[0]);
+    }
+
     private sealed class TestCounterComponent : YuoComponent
     {
         public int Pending;

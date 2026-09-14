@@ -16,4 +16,10 @@ public sealed record YuoFiberOptions
 
     /// <summary>单次 Tick 中最多处理 mailbox 消息数，防止突发消息淹没帧循环。</summary>
     public int MaxMailboxMessagesPerTick { get; init; } = 10_000;
+
+    /// <summary>
+    /// fire-and-forget 消息抛错时的兜底出口。为 null 时记录错误日志；
+    /// 无论是否设置都不会打穿 Tick 循环。
+    /// </summary>
+    public Action<YuoFiber, Exception>? UnhandledException { get; init; }
 }

@@ -59,31 +59,32 @@ public sealed class YuoFiberActorEndpoint : IActorEndpoint
                 return ValueTask.CompletedTask;
             }
 
-            return AwaitDispatchSendAsync(result);
+            return AwaitDispatchSendAsync(envelope, result);
         }
-        catch (ActorException)
+        catch (Exception exception)
         {
-            // Fire-and-forget actor messages must not tear down the owning Fiber tick.
-            return ValueTask.CompletedTask;
-        }
-        catch (Exception)
-        {
-            // SendAsync 没有 response 通道；异常由宿主日志/监控在更外层接入，不能打穿 mailbox。
+            // SendAsync 没有 response 通道；异常不得打穿 mailbox，但必须经 Fiber 错误出口可见。
+            Report(envelope, exception);
             return ValueTask.CompletedTask;
         }
     }
 
-    private static async ValueTask AwaitDispatchSendAsync(ValueTask<object?> dispatchTask)
+    private async ValueTask AwaitDispatchSendAsync(ActorEnvelope envelope, ValueTask<object?> dispatchTask)
     {
         try
         {
             await dispatchTask.ConfigureAwait(false);
         }
-        catch (ActorException)
+        catch (Exception exception)
         {
+            Report(envelope, exception);
         }
-        catch (Exception)
-        {
-        }
+    }
+
+    private void Report(ActorEnvelope envelope, Exception exception)
+    {
+        _fiber.ReportUnhandledException(
+            exception,
+            $"actor-send target={envelope.TargetActorId} msg={envelope.Message?.GetType().Name ?? "null"}");
     }
 }

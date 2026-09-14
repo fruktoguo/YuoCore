@@ -2212,3 +2212,17 @@ IDGenerate 绑定传入的 TimeInfo；挂机系统改用世界时钟。
 允许每世界注入生成器与确定性时钟配合。
 测试：Game.Tests 新增 FNV 期望值钉死 + 命名实体查找回归。
 ```
+
+### fire-and-forget 消息异常静默吞掉且可中断 Tick（已修复）
+
+```text
+问题：YuoFiber.PostAsync 投递的动作抛错会裸穿透 DrainMailboxAsync→TickAsync，
+中断本 tick 剩余消息；YuoFiberActorEndpoint.SendAsync 与 ActorFiber
+fire-and-forget 派发则把异常彻底静默吞掉，无任何出口。
+修复：YuoFiber.DrainMailboxAsync 逐消息捕获异常（取消语义除外），统一经
+ReportUnhandledException 出口；YuoFiberOptions.UnhandledException 允许
+宿主接管，未配置时走 YuoLog 错误日志（Log/LogError 扩展提为 public）。
+YuoFiberActorEndpoint 的 Send 失败经目标 Fiber 错误出口上报并携带
+目标 Actor/消息类型上下文；ActorFiber 增加 onUnhandledError 回调。
+测试：Runtime/Actor/Runtime.Actor 三处回归覆盖异常可见性与 tick 存活。
+```

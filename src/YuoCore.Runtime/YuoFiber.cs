@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using YuoCore.Ecs;
+using YuoCore.Ecs.Log;
 
 namespace YuoCore.Runtime;
 
@@ -143,8 +144,36 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
                 return;
             }
 
-            await action(this, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await action(this, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                // 单条 fire-and-forget 消息失败不得中断 tick，也不允许静默丢失
+                ReportUnhandledException(exception);
+            }
         }
+    }
+
+    /// <summary>
+    /// fire-and-forget 路径的异常出口：优先走宿主注入的 UnhandledException，
+    /// 未配置时记录错误日志，保证异常可见。
+    /// </summary>
+    public void ReportUnhandledException(Exception exception, string? context = null)
+    {
+        if (Options.UnhandledException is { } handler)
+        {
+            handler(this, exception);
+            return;
+        }
+
+        var scope = context is null ? "mailbox action" : context;
+        $"YuoFiber '{Name}' {scope} failed: {exception}".LogError();
     }
 
     public void Dispose()
