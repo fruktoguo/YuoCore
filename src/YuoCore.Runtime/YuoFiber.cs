@@ -8,6 +8,7 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
 {
     private readonly Channel<Func<YuoFiber, CancellationToken, ValueTask>> _mailbox;
     private readonly CancellationTokenSource _disposeCts = new();
+    private int _pendingMessages;
     private bool _started;
     private bool _disposed;
 
@@ -17,13 +18,22 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
         Id = options.Id;
         Name = string.IsNullOrWhiteSpace(options.Name) ? $"Fiber-{Id}" : options.Name;
         World = world ?? new YuoWorld();
-        _mailbox = Channel.CreateUnbounded<Func<YuoFiber, CancellationToken, ValueTask>>(
-            new UnboundedChannelOptions
-            {
-                SingleReader = true,
-                SingleWriter = false,
-                AllowSynchronousContinuations = false
-            });
+        _mailbox = options.MaxMailboxCapacity > 0
+            ? Channel.CreateBounded<Func<YuoFiber, CancellationToken, ValueTask>>(
+                new BoundedChannelOptions(options.MaxMailboxCapacity)
+                {
+                    SingleReader = true,
+                    SingleWriter = false,
+                    AllowSynchronousContinuations = false,
+                    FullMode = BoundedChannelFullMode.Wait
+                })
+            : Channel.CreateUnbounded<Func<YuoFiber, CancellationToken, ValueTask>>(
+                new UnboundedChannelOptions
+                {
+                    SingleReader = true,
+                    SingleWriter = false,
+                    AllowSynchronousContinuations = false
+                });
     }
 
     public long Id { get; }
@@ -37,6 +47,11 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     public bool IsStarted => _started;
 
     public bool IsDisposed => _disposed;
+
+    /// <summary>
+    /// 当前 mailbox 中尚未消费的消息数（含写入阻塞中的投递），供监控/背压观测。
+    /// </summary>
+    public int PendingMessageCount => Volatile.Read(ref _pendingMessages);
 
     public void Start()
     {
@@ -63,7 +78,25 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     {
         ArgumentNullException.ThrowIfNull(action);
         ThrowIfDisposed();
-        return _mailbox.Writer.WriteAsync(action, cancellationToken);
+        return EnqueueAsync(action, cancellationToken);
+    }
+
+    private async ValueTask EnqueueAsync(
+        Func<YuoFiber, CancellationToken, ValueTask> action,
+        CancellationToken cancellationToken)
+    {
+        // 写入前计数：有界通道下阻塞中的 writer 也属于待处理压力；
+        // 且避免 reader 先消费导致计数出现负值。
+        Interlocked.Increment(ref _pendingMessages);
+        try
+        {
+            await _mailbox.Writer.WriteAsync(action, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            Interlocked.Decrement(ref _pendingMessages);
+            throw;
+        }
     }
 
     public async ValueTask<T> CallAsync<T>(Func<YuoFiber, CancellationToken, ValueTask<T>> action, CancellationToken cancellationToken = default)
@@ -74,7 +107,7 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
         // CallAsync 是跨 Fiber 同步请求的基础：调用方等待 TaskCompletionSource，
         // 真正的业务代码仍然排进目标 Fiber mailbox，由目标 Fiber 串行执行。
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-        await _mailbox.Writer.WriteAsync(async (fiber, token) =>
+        await EnqueueAsync(async (fiber, token) =>
         {
             if (cancellationToken.IsCancellationRequested)
             {
@@ -144,6 +177,7 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
                 return;
             }
 
+            Interlocked.Decrement(ref _pendingMessages);
             try
             {
                 await action(this, cancellationToken).ConfigureAwait(false);

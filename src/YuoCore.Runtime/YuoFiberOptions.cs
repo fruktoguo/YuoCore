@@ -22,4 +22,10 @@ public sealed record YuoFiberOptions
     /// 无论是否设置都不会打穿 Tick 循环。
     /// </summary>
     public Action<YuoFiber, Exception>? UnhandledException { get; init; }
+
+    /// <summary>
+    /// mailbox 容量上限；0 表示无界（默认）。设置后写满时投递方异步等待，
+    /// 为 Fiber 提供天然背压。
+    /// </summary>
+    public int MaxMailboxCapacity { get; init; } = 0;
 }

@@ -2226,3 +2226,15 @@ YuoFiberActorEndpoint 的 Send 失败经目标 Fiber 错误出口上报并携带
 目标 Actor/消息类型上下文；ActorFiber 增加 onUnhandledError 回调。
 测试：Runtime/Actor/Runtime.Actor 三处回归覆盖异常可见性与 tick 存活。
 ```
+
+### Fiber mailbox 无界增长且无积压观测（已修复）
+
+```text
+问题：YuoFiber/ActorFiber mailbox 均为无界 Channel，突发投递无背压，
+也无积压计数可供监控（ChannelReader.Count 在无界实现上不可用）。
+修复：YuoFiberOptions.MaxMailboxCapacity>0 时改用有界 Channel
+（写满时投递方异步等待形成背压）；YuoFiber 与 ActorFiber 新增
+PendingMessageCount（写入前计数的 Interlocked 计数器，
+阻塞中的 writer 也计入，反映真实投递压力）。
+测试：Runtime.Tests 新增有界背压与计数回归。
+```

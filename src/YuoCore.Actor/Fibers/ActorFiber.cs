@@ -8,6 +8,7 @@ public sealed class ActorFiber : IActorEndpoint, IAsyncDisposable
     private readonly IActorMessageDispatcher _dispatcher;
     private readonly CancellationTokenSource _stop = new();
     private readonly Action<ActorEnvelope, Exception>? _unhandledError;
+    private int _pendingMessages;
     private Task? _runTask;
 
     public ActorFiber(
@@ -34,6 +35,9 @@ public sealed class ActorFiber : IActorEndpoint, IAsyncDisposable
 
     public ChannelReader<MailboxItem> Reader => _mailbox.Reader;
 
+    /// <summary>当前 mailbox 中尚未消费的消息数（含写入阻塞中的投递），供监控观测。</summary>
+    public int PendingMessageCount => Volatile.Read(ref _pendingMessages);
+
     public void Start(CancellationToken cancellationToken = default)
     {
         if (_runTask is not null)
@@ -49,14 +53,7 @@ public sealed class ActorFiber : IActorEndpoint, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(envelope);
 
-        try
-        {
-            await _mailbox.Writer.WriteAsync(new MailboxItem(envelope), cancellationToken);
-        }
-        catch (ChannelClosedException)
-        {
-            throw CreateClosedException();
-        }
+        await EnqueueAsync(new MailboxItem(envelope), cancellationToken);
     }
 
     public async ValueTask<ActorEnvelope> InvokeAsync(
@@ -68,14 +65,7 @@ public sealed class ActorFiber : IActorEndpoint, IAsyncDisposable
         var completion = new TaskCompletionSource<ActorEnvelope>(
             TaskCreationOptions.RunContinuationsAsynchronously);
 
-        try
-        {
-            await _mailbox.Writer.WriteAsync(new MailboxItem(envelope, completion), cancellationToken);
-        }
-        catch (ChannelClosedException)
-        {
-            throw CreateClosedException();
-        }
+        await EnqueueAsync(new MailboxItem(envelope, completion), cancellationToken);
 
         using var registration = cancellationToken.Register(() =>
             completion.TrySetCanceled(cancellationToken));
@@ -88,12 +78,33 @@ public sealed class ActorFiber : IActorEndpoint, IAsyncDisposable
         return new ActorException(ActorError.NotFound($"Actor fiber {FiberId} mailbox is closed."));
     }
 
+    private async ValueTask EnqueueAsync(MailboxItem item, CancellationToken cancellationToken)
+    {
+        // 写入前计数，避免 reader 先消费导致计数出现负值
+        Interlocked.Increment(ref _pendingMessages);
+        try
+        {
+            await _mailbox.Writer.WriteAsync(item, cancellationToken);
+        }
+        catch (ChannelClosedException)
+        {
+            Interlocked.Decrement(ref _pendingMessages);
+            throw CreateClosedException();
+        }
+        catch
+        {
+            Interlocked.Decrement(ref _pendingMessages);
+            throw;
+        }
+    }
+
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         try
         {
             await foreach (var item in _mailbox.Reader.ReadAllAsync(cancellationToken))
             {
+                Interlocked.Decrement(ref _pendingMessages);
                 await DispatchMailboxItemAsync(item, cancellationToken).ConfigureAwait(false);
             }
         }
