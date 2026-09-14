@@ -1475,7 +1475,7 @@ export function decodeHelloRequest(bytes: Uint8Array): YuoHelloRequest {
 export function encodeClickRequest(request: YuoClickRequest): Uint8Array {
   const writer = new ProtoWriter();
   writer.string(1, request.playerId);
-  writer.uint64(2, toBigInt(request.amount));
+  writer.int64(2, toBigIntSigned(request.amount));
   return writer.finish();
 }
 
@@ -1489,7 +1489,7 @@ export function decodeClickRequest(bytes: Uint8Array): YuoClickRequest {
         request.playerId = reader.string();
         break;
       case 2:
-        request.amount = reader.varint();
+        request.amount = reader.int64();
         break;
       default:
         reader.skip(tag.wireType);
@@ -1524,7 +1524,7 @@ export function decodeSnapshotRequest(bytes: Uint8Array): YuoSnapshotRequest {
 export function encodeEnterMapRequest(request: YuoEnterMapRequest): Uint8Array {
   const writer = new ProtoWriter();
   writer.string(1, request.playerId);
-  writer.uint64(2, toBigInt(request.mapId));
+  writer.int64(2, toBigIntSigned(request.mapId));
   return writer.finish();
 }
 
@@ -1538,7 +1538,7 @@ export function decodeEnterMapRequest(bytes: Uint8Array): YuoEnterMapRequest {
         request.playerId = reader.string();
         break;
       case 2:
-        request.mapId = reader.varint();
+        request.mapId = reader.int64();
         break;
       default:
         reader.skip(tag.wireType);
@@ -1620,7 +1620,7 @@ export function decodeDisconnectRequest(bytes: Uint8Array): YuoDisconnectRequest
 export function encodeStateSnapshotRequest(request: YuoStateSnapshotRequest): Uint8Array {
   const writer = new ProtoWriter();
   writer.string(1, request.playerId);
-  writer.uint64(2, toBigInt(request.knownTick ?? 0));
+  writer.int64(2, toBigIntSigned(request.knownTick ?? 0));
   return writer.finish();
 }
 
@@ -1634,7 +1634,7 @@ export function decodeStateSnapshotRequest(bytes: Uint8Array): YuoStateSnapshotR
         request.playerId = reader.string();
         break;
       case 2:
-        request.knownTick = reader.varint();
+        request.knownTick = reader.int64();
         break;
       default:
         reader.skip(tag.wireType);
@@ -1648,7 +1648,7 @@ export function decodeStateSnapshotRequest(bytes: Uint8Array): YuoStateSnapshotR
 export function encodeStateSyncRecoverRequest(request: YuoStateSyncRecoverRequest): Uint8Array {
   const writer = new ProtoWriter();
   writer.string(1, request.playerId);
-  writer.uint64(2, toBigInt(request.knownTick ?? 0));
+  writer.int64(2, toBigIntSigned(request.knownTick ?? 0));
   writer.string(3, request.streamId ?? "");
   return writer.finish();
 }
@@ -1663,7 +1663,7 @@ export function decodeStateSyncRecoverRequest(bytes: Uint8Array): YuoStateSyncRe
         request.playerId = reader.string();
         break;
       case 2:
-        request.knownTick = reader.varint();
+        request.knownTick = reader.int64();
         break;
       case 3:
         request.streamId = reader.string();
@@ -1680,7 +1680,7 @@ export function decodeStateSyncRecoverRequest(bytes: Uint8Array): YuoStateSyncRe
 export function encodeStateSyncAckRequest(request: YuoStateSyncAckRequest): Uint8Array {
   const writer = new ProtoWriter();
   writer.string(1, request.playerId);
-  writer.uint64(2, toBigInt(request.ackTick));
+  writer.int64(2, toBigIntSigned(request.ackTick));
   writer.string(3, request.streamId ?? "");
   return writer.finish();
 }
@@ -1695,7 +1695,7 @@ export function decodeStateSyncAckRequest(bytes: Uint8Array): YuoStateSyncAckReq
         request.playerId = reader.string();
         break;
       case 2:
-        request.ackTick = reader.varint();
+        request.ackTick = reader.int64();
         break;
       case 3:
         request.streamId = reader.string();
@@ -1741,18 +1741,18 @@ export function encodePlayerSnapshot(snapshot: YuoPlayerSnapshot): Uint8Array {
   const writer = new ProtoWriter();
   writer.string(1, snapshot.playerId);
   writer.string(2, snapshot.name);
-  writer.uint64(3, snapshot.gold);
-  writer.uint64(4, snapshot.exp);
-  writer.uint32(5, BigInt(snapshot.level));
-  writer.uint64(6, snapshot.power);
-  writer.uint64(7, snapshot.clicks);
-  writer.uint64(8, snapshot.updatedUnixMs);
-  writer.uint64(9, snapshot.mapId);
-  writer.uint64(10, snapshot.unitId);
+  writer.int64(3, snapshot.gold);
+  writer.int64(4, snapshot.exp);
+  writer.int32(5, BigInt(snapshot.level));
+  writer.int64(6, snapshot.power);
+  writer.int64(7, snapshot.clicks);
+  writer.int64(8, snapshot.updatedUnixMs);
+  writer.int64(9, snapshot.mapId);
+  writer.int64(10, snapshot.unitId);
   writer.float(11, snapshot.x);
   writer.float(12, snapshot.y);
   writer.float(13, snapshot.z);
-  writer.uint32(14, snapshot.online ? 1n : 0n);
+  writer.bool(14, snapshot.online);
   writer.uint64(15, snapshot.lastInputSeq);
   return writer.finish();
 }
@@ -1782,18 +1782,18 @@ export function decodePlayerSnapshot(bytes: Uint8Array): YuoPlayerSnapshot {
     switch (tag.field) {
       case 1: snapshot.playerId = reader.string(); break;
       case 2: snapshot.name = reader.string(); break;
-      case 3: snapshot.gold = reader.varint(); break;
-      case 4: snapshot.exp = reader.varint(); break;
-      case 5: snapshot.level = Number(reader.varint()); break;
-      case 6: snapshot.power = reader.varint(); break;
-      case 7: snapshot.clicks = reader.varint(); break;
-      case 8: snapshot.updatedUnixMs = reader.varint(); break;
-      case 9: snapshot.mapId = reader.varint(); break;
-      case 10: snapshot.unitId = reader.varint(); break;
+      case 3: snapshot.gold = reader.int64(); break;
+      case 4: snapshot.exp = reader.int64(); break;
+      case 5: snapshot.level = reader.int32(); break;
+      case 6: snapshot.power = reader.int64(); break;
+      case 7: snapshot.clicks = reader.int64(); break;
+      case 8: snapshot.updatedUnixMs = reader.int64(); break;
+      case 9: snapshot.mapId = reader.int64(); break;
+      case 10: snapshot.unitId = reader.int64(); break;
       case 11: snapshot.x = reader.float(); break;
       case 12: snapshot.y = reader.float(); break;
       case 13: snapshot.z = reader.float(); break;
-      case 14: snapshot.online = reader.varint() !== 0n; break;
+      case 14: snapshot.online = reader.bool(); break;
       case 15: snapshot.lastInputSeq = reader.varint(); break;
       default: reader.skip(tag.wireType); break;
     }
@@ -1806,14 +1806,14 @@ export function encodePlayerWorldState(state: YuoPlayerWorldState): Uint8Array {
   const writer = new ProtoWriter();
   writer.string(1, state.playerId);
   writer.string(2, state.name);
-  writer.uint64(3, state.mapId);
-  writer.uint64(4, state.unitId);
+  writer.int64(3, state.mapId);
+  writer.int64(4, state.unitId);
   writer.float(5, state.x);
   writer.float(6, state.y);
   writer.float(7, state.z);
-  writer.uint32(8, state.online ? 1n : 0n);
+  writer.bool(8, state.online);
   writer.uint64(9, state.lastInputSeq);
-  writer.uint64(10, state.updatedUnixMs);
+  writer.int64(10, state.updatedUnixMs);
   return writer.finish();
 }
 
@@ -1837,14 +1837,14 @@ export function decodePlayerWorldState(bytes: Uint8Array): YuoPlayerWorldState {
     switch (tag.field) {
       case 1: state.playerId = reader.string(); break;
       case 2: state.name = reader.string(); break;
-      case 3: state.mapId = reader.varint(); break;
-      case 4: state.unitId = reader.varint(); break;
+      case 3: state.mapId = reader.int64(); break;
+      case 4: state.unitId = reader.int64(); break;
       case 5: state.x = reader.float(); break;
       case 6: state.y = reader.float(); break;
       case 7: state.z = reader.float(); break;
-      case 8: state.online = reader.varint() !== 0n; break;
+      case 8: state.online = reader.bool(); break;
       case 9: state.lastInputSeq = reader.varint(); break;
-      case 10: state.updatedUnixMs = reader.varint(); break;
+      case 10: state.updatedUnixMs = reader.int64(); break;
       default: reader.skip(tag.wireType); break;
     }
   }
@@ -1859,7 +1859,7 @@ export function encodeWorldEvent(event: YuoWorldEvent): Uint8Array {
     writer.bytes(2, encodePlayerWorldState(event.player));
   }
 
-  writer.uint64(3, event.createdUnixMs);
+  writer.int64(3, event.createdUnixMs);
   return writer.finish();
 }
 
@@ -1876,7 +1876,7 @@ export function decodeWorldEvent(bytes: Uint8Array): YuoWorldEvent {
         event.player = decodePlayerWorldState(reader.bytes());
         break;
       case 3:
-        event.createdUnixMs = reader.varint();
+        event.createdUnixMs = reader.int64();
         break;
       default:
         reader.skip(tag.wireType);
@@ -1889,8 +1889,8 @@ export function decodeWorldEvent(bytes: Uint8Array): YuoWorldEvent {
 
 export function encodeWorldSnapshot(snapshot: YuoWorldSnapshot): Uint8Array {
   const writer = new ProtoWriter();
-  writer.uint64(1, snapshot.mapId);
-  writer.uint64(2, snapshot.tick);
+  writer.int64(1, snapshot.mapId);
+  writer.int64(2, snapshot.tick);
   for (const player of snapshot.players) {
     writer.bytes(3, encodePlayerWorldState(player));
   }
@@ -1915,10 +1915,10 @@ export function decodeWorldSnapshot(bytes: Uint8Array): YuoWorldSnapshot {
     const tag = reader.tag();
     switch (tag.field) {
       case 1:
-        snapshot.mapId = reader.varint();
+        snapshot.mapId = reader.int64();
         break;
       case 2:
-        snapshot.tick = reader.varint();
+        snapshot.tick = reader.int64();
         break;
       case 3:
         snapshot.players.push(decodePlayerWorldState(reader.bytes()));
@@ -1937,7 +1937,7 @@ export function decodeWorldSnapshot(bytes: Uint8Array): YuoWorldSnapshot {
 
 export function encodeStateSnapshotMessage(snapshot: YuoStateSnapshot): Uint8Array {
   const writer = new ProtoWriter();
-  writer.uint64(1, snapshot.tick);
+  writer.int64(1, snapshot.tick);
   for (const entity of snapshot.entities) {
     writer.bytes(2, encodeNetworkEntityState(entity));
   }
@@ -2000,8 +2000,8 @@ export function decodeStateSyncRecoverResponse(bytes: Uint8Array): YuoStateSyncR
 export function encodeStateSyncAckResponse(response: YuoStateSyncAckResponse): Uint8Array {
   const writer = new ProtoWriter();
   writer.bool(1, response.accepted);
-  writer.uint64(2, response.ackTick);
-  writer.uint64(3, response.latestTick);
+  writer.int64(2, response.ackTick);
+  writer.int64(3, response.latestTick);
   writer.string(4, response.reason);
   writer.string(5, response.streamId ?? "");
   return writer.finish();
@@ -2023,10 +2023,10 @@ export function decodeStateSyncAckResponse(bytes: Uint8Array): YuoStateSyncAckRe
         response.accepted = reader.bool();
         break;
       case 2:
-        response.ackTick = reader.varint();
+        response.ackTick = reader.int64();
         break;
       case 3:
-        response.latestTick = reader.varint();
+        response.latestTick = reader.int64();
         break;
       case 4:
         response.reason = reader.string();
@@ -2045,7 +2045,7 @@ export function decodeStateSyncAckResponse(bytes: Uint8Array): YuoStateSyncAckRe
 
 export function encodeNetworkEntityState(entity: YuoNetworkEntityState): Uint8Array {
   const writer = new ProtoWriter();
-  writer.uint64(1, entity.networkId);
+  writer.int64(1, entity.networkId);
   writer.string(2, entity.kind);
   writer.uint32(3, BigInt(entity.version));
   writer.bytes(4, entity.payload);
@@ -2065,7 +2065,7 @@ export function decodeNetworkEntityState(bytes: Uint8Array): YuoNetworkEntitySta
     const tag = reader.tag();
     switch (tag.field) {
       case 1:
-        state.networkId = reader.varint();
+        state.networkId = reader.int64();
         break;
       case 2:
         state.kind = reader.string();
@@ -2096,7 +2096,7 @@ export function decodeStateSnapshotMessage(bytes: Uint8Array): YuoStateSnapshot 
     const tag = reader.tag();
     switch (tag.field) {
       case 1:
-        snapshot.tick = reader.varint();
+        snapshot.tick = reader.int64();
         break;
       case 2:
         snapshot.entities.push(decodeNetworkEntityState(reader.bytes()));
@@ -2115,13 +2115,13 @@ export function decodeStateSnapshotMessage(bytes: Uint8Array): YuoStateSnapshot 
 
 export function encodeStateDelta(delta: YuoStateDelta): Uint8Array {
   const writer = new ProtoWriter();
-  writer.uint64(1, delta.tick);
+  writer.int64(1, delta.tick);
   for (const change of delta.changes) {
     writer.bytes(2, encodeStateChangeMessage(change));
   }
 
   if (delta.baseTick !== undefined) {
-    writer.uint64(3, delta.baseTick);
+    writer.int64(3, delta.baseTick);
   }
   writer.string(4, delta.streamId ?? "");
 
@@ -2130,12 +2130,12 @@ export function encodeStateDelta(delta: YuoStateDelta): Uint8Array {
 
 export function encodeStateChangeMessage(change: YuoStateChange): Uint8Array {
   const writer = new ProtoWriter();
-  writer.uint32(1, BigInt(change.kind));
+  writer.int32(1, BigInt(change.kind));
   if (change.state) {
     writer.bytes(2, encodeNetworkEntityState(change.state));
   }
 
-  writer.uint64(3, change.networkId);
+  writer.int64(3, change.networkId);
   return writer.finish();
 }
 
@@ -2150,13 +2150,13 @@ export function decodeStateChangeMessage(bytes: Uint8Array): YuoStateChange {
     const tag = reader.tag();
     switch (tag.field) {
       case 1:
-        kind = Number(reader.varint()) as YuoStateChangeKindValue;
+        kind = reader.int32() as YuoStateChangeKindValue;
         break;
       case 2:
         state = decodeNetworkEntityState(reader.bytes());
         break;
       case 3:
-        networkId = reader.varint();
+        networkId = reader.int64();
         networkIdSet = true;
         break;
       default:
@@ -2183,13 +2183,13 @@ export function decodeStateDeltaMessage(bytes: Uint8Array): YuoStateDelta {
     const tag = reader.tag();
     switch (tag.field) {
       case 1:
-        delta.tick = reader.varint();
+        delta.tick = reader.int64();
         break;
       case 2:
         delta.changes.push(decodeStateChangeMessage(reader.bytes()));
         break;
       case 3:
-        delta.baseTick = reader.varint();
+        delta.baseTick = reader.int64();
         break;
       case 4:
         delta.streamId = reader.string();
@@ -2357,6 +2357,18 @@ function toBigInt(value: bigint | number): bigint {
   return BigInt(value);
 }
 
+function toBigIntSigned(value: bigint | number): bigint {
+  if (typeof value === "bigint") {
+    return value;
+  }
+
+  if (!Number.isFinite(value) || !Number.isSafeInteger(value)) {
+    throw new RangeError("protobuf integer value must be a safe integer.");
+  }
+
+  return BigInt(value);
+}
+
 interface PendingRequest {
   resolve(bytes: Uint8Array): void;
   reject(error: Error): void;
@@ -2378,6 +2390,31 @@ class ProtoWriter {
   public uint64(field: number, value: bigint): void {
     this.tag(field, 0);
     this.varint(value);
+  }
+
+  public int32(field: number, value: bigint): void {
+    this.tag(field, 0);
+    // protobuf int32 负值按 64 位符号扩展编码为 10 字节 varint。
+    this.varint(BigInt.asUintN(64, BigInt.asIntN(32, value)));
+  }
+
+  public int64(field: number, value: bigint): void {
+    if (value < -(1n << 63n) || value > (1n << 63n) - 1n) {
+      throw new RangeError("protobuf int64 value is out of range.");
+    }
+
+    this.tag(field, 0);
+    // 负数转 64 位二进制补码后按无符号 varint 写出。
+    this.varint(BigInt.asUintN(64, value));
+  }
+
+  public fixed64(field: number, value: bigint): void {
+    this.tag(field, 1);
+    const buffer = new ArrayBuffer(8);
+    new DataView(buffer).setBigUint64(0, BigInt.asUintN(64, value), true);
+    for (const byte of new Uint8Array(buffer)) {
+      this.chunks.push(byte);
+    }
   }
 
   public bool(field: number, value: boolean): void {
@@ -2474,6 +2511,27 @@ class ProtoReader {
     return this.varint() !== 0n;
   }
 
+  public int32(): number {
+    return Number(BigInt.asIntN(32, this.varint()));
+  }
+
+  public int64(): bigint {
+    return BigInt.asIntN(64, this.varint());
+  }
+
+  public fixed64(): bigint {
+    if (this.offset + 8 > this.bytesValue.length) {
+      throw new YuoClientProtocolError("unexpected_eof", "Unexpected end of protobuf fixed64 field.");
+    }
+
+    const value = new DataView(
+      this.bytesValue.buffer,
+      this.bytesValue.byteOffset + this.offset,
+      8).getBigUint64(0, true);
+    this.offset += 8;
+    return value;
+  }
+
   public bytes(): Uint8Array {
     const length = Number(this.varint());
     if (!Number.isSafeInteger(length) || length < 0 || this.offset + length > this.bytesValue.length) {
@@ -2506,6 +2564,13 @@ class ProtoReader {
     switch (wireType) {
       case 0:
         this.varint();
+        return;
+      case 1:
+        if (this.offset + 8 > this.bytesValue.length) {
+          throw new YuoClientProtocolError("unexpected_eof", "Unexpected end of protobuf fixed64 field.");
+        }
+
+        this.offset += 8;
         return;
       case 2:
         this.bytes();
