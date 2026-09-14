@@ -112,6 +112,64 @@ public sealed class GameClientMessageDispatcherTests
     }
 
     [Fact]
+    public async Task Gateway_bridge_rejects_non_hello_requests_before_player_binding()
+    {
+        using var runtime = new GameRuntime(Options.Create(new GameOptions { TickRate = 10, ShardCount = 2 }));
+        runtime.Start();
+        var dispatcher = new GameClientMessageDispatcher(
+            runtime,
+            new GameCommandQueue(Options.Create(new GameOptions())));
+        var pipeline = new YuoGatewayDispatchPipeline(new GameGatewayProtobufDispatcher(dispatcher));
+        var session = new YuoGatewaySession();
+
+        var outbound = await pipeline.DispatchAsync(
+            session,
+            new YuoGatewayInboundMessage(
+                1,
+                YuoCoreProtocolOpCodes.ClickRequest,
+                301,
+                1,
+                new ClickRequest { PlayerId = Guid.NewGuid().ToString(), Amount = 1 }.ToByteArray()));
+
+        Assert.NotNull(outbound.Error);
+        Assert.Contains("not bound", outbound.Error.Message);
+    }
+
+    [Fact]
+    public async Task Gateway_bridge_rejects_request_for_another_player_after_binding()
+    {
+        using var runtime = new GameRuntime(Options.Create(new GameOptions { TickRate = 10, ShardCount = 2 }));
+        runtime.Start();
+        var dispatcher = new GameClientMessageDispatcher(
+            runtime,
+            new GameCommandQueue(Options.Create(new GameOptions())));
+        var pipeline = new YuoGatewayDispatchPipeline(new GameGatewayProtobufDispatcher(dispatcher));
+        var session = new YuoGatewaySession();
+
+        await pipeline.DispatchAsync(
+            session,
+            new YuoGatewayInboundMessage(
+                1,
+                YuoCoreProtocolOpCodes.HelloRequest,
+                401,
+                1,
+                new HelloRequest { PlayerId = string.Empty }.ToByteArray()));
+        Assert.NotNull(session.PlayerId);
+
+        var outbound = await pipeline.DispatchAsync(
+            session,
+            new YuoGatewayInboundMessage(
+                1,
+                YuoCoreProtocolOpCodes.ClickRequest,
+                402,
+                2,
+                new ClickRequest { PlayerId = Guid.NewGuid().ToString(), Amount = 1 }.ToByteArray()));
+
+        Assert.NotNull(outbound.Error);
+        Assert.Contains("does not match", outbound.Error.Message);
+    }
+
+    [Fact]
     public async Task Gateway_bridge_accepts_enter_and_move_v1_payloads()
     {
         using var runtime = new GameRuntime(Options.Create(new GameOptions { TickRate = 10, ShardCount = 2 }));

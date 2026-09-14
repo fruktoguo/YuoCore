@@ -38,6 +38,11 @@ public sealed class GameGatewayProtobufDispatcher(
 
         var request = DecodeRequest(message);
         NormalizeGatewaySession(request, session);
+        if (!ValidateSessionPlayer(session, request, out var authError))
+        {
+            return Error(message, authError);
+        }
+
         var response = await inner.DispatchAsync(request, session.SessionId.ToString("N"), cancellationToken).ConfigureAwait(false);
         BindSessionPlayerIfPossible(session, response);
         var encodeAsEnvelopeV1Payload = message.OpCode != 0;
@@ -99,6 +104,45 @@ public sealed class GameGatewayProtobufDispatcher(
             },
             _ => throw new InvalidOperationException($"Unsupported gateway opcode {message.OpCode}.")
         };
+    }
+
+    // 鉴权门禁：Hello 是唯一允许在绑定前进入的请求；其余请求必须已完成绑定，
+    // 且请求内携带的 player_id 必须等于绑定玩家，杜绝未认证连接操作任意玩家。
+    private static bool ValidateSessionPlayer(
+        YuoGatewaySession session,
+        ClientEnvelope request,
+        out YuoError error)
+    {
+        error = default!;
+        if (request.PayloadCase == ClientEnvelope.PayloadOneofCase.Hello)
+        {
+            return true;
+        }
+
+        if (session.PlayerId is not { } boundPlayerId)
+        {
+            error = YuoError.Invalid("session is not bound to a player; send hello first.");
+            return false;
+        }
+
+        var requestedPlayerId = request.PayloadCase switch
+        {
+            ClientEnvelope.PayloadOneofCase.Click => request.Click.PlayerId,
+            ClientEnvelope.PayloadOneofCase.Snapshot => request.Snapshot.PlayerId,
+            ClientEnvelope.PayloadOneofCase.EnterMap => request.EnterMap.PlayerId,
+            ClientEnvelope.PayloadOneofCase.Move => request.Move.PlayerId,
+            ClientEnvelope.PayloadOneofCase.Disconnect => request.Disconnect.PlayerId,
+            _ => string.Empty
+        };
+
+        if (!string.IsNullOrWhiteSpace(requestedPlayerId) &&
+            (!Guid.TryParse(requestedPlayerId, out var requested) || requested != boundPlayerId))
+        {
+            error = YuoError.Invalid("request player_id does not match the bound session player.");
+            return false;
+        }
+
+        return true;
     }
 
     private static void NormalizeGatewaySession(ClientEnvelope request, YuoGatewaySession session)
