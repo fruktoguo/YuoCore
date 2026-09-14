@@ -122,9 +122,7 @@ public sealed class GameRuntime : IDisposable
                 return false;
             }
 
-            _actorRouter.SendAsync(new EnterMapActorMessage(playerRef.ActorId, mapId))
-                .GetAwaiter()
-                .GetResult();
+            AwaitSync(_actorRouter.SendAsync(new EnterMapActorMessage(playerRef.ActorId, mapId)).AsTask());
             TickShard(playerRef.Shard);
             snapshot = BuildMapSnapshot(mapId, DrainEvents(playerId));
             return true;
@@ -143,9 +141,7 @@ public sealed class GameRuntime : IDisposable
             }
 
             var presence = playerRef.Entity.GetComponent<YuoPlayerPresenceComponent>();
-            _actorRouter.SendAsync(new MoveActorMessage(playerRef.ActorId, x, y, z, inputSeq))
-                .GetAwaiter()
-                .GetResult();
+            AwaitSync(_actorRouter.SendAsync(new MoveActorMessage(playerRef.ActorId, x, y, z, inputSeq)).AsTask());
             TickShard(playerRef.Shard);
             snapshot = BuildMapSnapshot(presence.MapId, DrainEvents(playerId));
             return true;
@@ -167,7 +163,7 @@ public sealed class GameRuntime : IDisposable
                 .InvokeAsync<bool>(new DisconnectActorMessage(playerRef.ActorId, sessionId))
                 .AsTask();
             TickShard(playerRef.Shard);
-            return disconnectTask.GetAwaiter().GetResult();
+            return AwaitSync(disconnectTask);
         }
     }
 
@@ -277,9 +273,7 @@ public sealed class GameRuntime : IDisposable
 
             // 命令队列入口只负责投递消息，不直接改组件。
             // 真正的组件修改会在目标 GameShard 的 YuoFiber mailbox 中执行，避免跨线程碰 ECS 状态。
-            _actorRouter.SendAsync(new ApplyClickActorMessage(playerRef.ActorId, amount))
-                .GetAwaiter()
-                .GetResult();
+            AwaitSync(_actorRouter.SendAsync(new ApplyClickActorMessage(playerRef.ActorId, amount)).AsTask());
             return true;
         }
     }
@@ -291,9 +285,7 @@ public sealed class GameRuntime : IDisposable
             EnsureStarted();
             if (!_players.TryGetValue(playerId, out var playerRef)) return false;
 
-            _actorRouter.SendAsync(new MoveActorMessage(playerRef.ActorId, x, y, z, inputSeq))
-                .GetAwaiter()
-                .GetResult();
+            AwaitSync(_actorRouter.SendAsync(new MoveActorMessage(playerRef.ActorId, x, y, z, inputSeq)).AsTask());
             return true;
         }
     }
@@ -312,7 +304,7 @@ public sealed class GameRuntime : IDisposable
                     .InvokeAsync<YuoPlayerSnapshotDto>(new ReadPlayerSnapshotActorMessage(playerRef.ActorId))
                     .AsTask();
                 TickShard(playerRef.Shard);
-                snapshot = readTask.GetAwaiter().GetResult();
+                snapshot = AwaitSync(readTask);
                 return true;
             }
         }
@@ -334,7 +326,7 @@ public sealed class GameRuntime : IDisposable
                     .InvokeAsync<GameAoiObserverState>(new ReadAoiObserverStateActorMessage(playerRef.ActorId))
                     .AsTask();
                 TickShard(playerRef.Shard);
-                state = readTask.GetAwaiter().GetResult();
+                state = AwaitSync(readTask);
                 return true;
             }
         }
@@ -379,7 +371,7 @@ public sealed class GameRuntime : IDisposable
                 .InvokeAsync<GameAoiObserverState>(new ReadAoiObserverStateActorMessage(playerRef.ActorId))
                 .AsTask();
             TickShard(playerRef.Shard);
-            var observer = readTask.GetAwaiter().GetResult();
+            var observer = AwaitSync(readTask);
             if (observer.MapId == 0)
             {
                 snapshot = default!;
@@ -514,11 +506,11 @@ public sealed class GameRuntime : IDisposable
             EnsureStarted();
             if (_shards.Count == 1)
             {
-                _runtime.TickAsync().AsTask().GetAwaiter().GetResult();
+                AwaitSync(_runtime.TickAsync().AsTask());
             }
             else
             {
-                _runtime.TickParallelAsync(_options.MaxTickConcurrency).AsTask().GetAwaiter().GetResult();
+                AwaitSync(_runtime.TickParallelAsync(_options.MaxTickConcurrency).AsTask());
             }
         }
     }
@@ -543,7 +535,7 @@ public sealed class GameRuntime : IDisposable
             foreach (var playerRef in _players.Values)
             {
                 _actorTransport.UnregisterEndpoint(playerRef.Address);
-                _actorLocation.UnregisterAsync(playerRef.ActorId).AsTask().GetAwaiter().GetResult();
+                AwaitSync(_actorLocation.UnregisterAsync(playerRef.ActorId).AsTask());
                 _actorEntities.Unregister(playerRef.ActorId);
             }
             _players.Clear();
@@ -685,7 +677,7 @@ public sealed class GameRuntime : IDisposable
         var address = new ActorAddress("local", checked((int)shard.Fiber.Id), actorId);
         _actorEntities.Register(actorId, entity);
         _actorTransport.RegisterEndpoint(address, shard.ActorEndpoint);
-        _actorLocation.RegisterAsync(actorId, address).AsTask().GetAwaiter().GetResult();
+        AwaitSync(_actorLocation.RegisterAsync(actorId, address).AsTask());
         return new PlayerRef(shard, entity, actorId, address);
     }
 
@@ -749,7 +741,22 @@ public sealed class GameRuntime : IDisposable
 
     private void TickShard(GameShard shard)
     {
-        shard.Fiber.TickAsync().AsTask().GetAwaiter().GetResult();
+        AwaitSync(shard.Fiber.TickAsync().AsTask());
+    }
+
+    private static readonly TimeSpan SyncWaitTimeout = TimeSpan.FromSeconds(30);
+
+    // 同步 facade 在持锁状态下阻塞等待异步结果。若异步完成依赖某个未被本线程驱动的
+    // Fiber tick（例如 Actor 被迁移/派发到其他 shard），裸 GetResult 会永久持锁冻结
+    // 整个 GameRuntime；有界等待把该故障变成可见的 TimeoutException。
+    private static T AwaitSync<T>(Task<T> task)
+    {
+        return task.WaitAsync(SyncWaitTimeout).GetAwaiter().GetResult();
+    }
+
+    private static void AwaitSync(Task task)
+    {
+        task.WaitAsync(SyncWaitTimeout).GetAwaiter().GetResult();
     }
 
     private void EnsureEventQueue(Guid playerId)
