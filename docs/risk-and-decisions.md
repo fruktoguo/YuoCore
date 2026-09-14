@@ -2262,3 +2262,12 @@ InvalidOperationException。ScheduleOnce/ScheduleRepeated 仅注册不等待，
 不受影响。
 测试：Runtime.Timers.Tests 回归覆盖守卫触发。
 ```
+
+### Actor→Location 适配器 ProcessId 硬编码（已修复）
+
+```text
+问题：YuoLocationActorRegistry 写入 YuoActorAddress 时 ProcessId 恒为
+"default"，不同进程的路由串不可区分。
+修复：适配器新增 processId 构造参数（缺省 "default"），写入侧使用配置值；
+读侧行为不变（ActorAddress 模型本就不含 ProcessId）。
+```

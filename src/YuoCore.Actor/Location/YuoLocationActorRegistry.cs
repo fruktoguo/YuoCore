@@ -6,11 +6,14 @@ namespace YuoCore.Actor;
 /// Actor 到独立 Location 包的兼容适配器。
 /// 旧代码仍然按 ActorId 注册/查询；底层 Location 使用稳定的 Type+Key 格式，后续可以替换成分布式实现。
 /// </summary>
-public sealed class YuoLocationActorRegistry(IYuoLocationRegistry locations) :
+public sealed class YuoLocationActorRegistry(IYuoLocationRegistry locations, string processId = "default") :
     IActorLocationRegistry,
     IActorLocationInvalidator
 {
     private readonly IYuoLocationRegistry _locations = locations ?? throw new ArgumentNullException(nameof(locations));
+    private readonly string _processId = string.IsNullOrWhiteSpace(processId)
+        ? "default"
+        : processId;
 
     public async ValueTask RegisterAsync(ActorId actorId, ActorAddress address, CancellationToken cancellationToken = default)
     {
@@ -60,9 +63,9 @@ public sealed class YuoLocationActorRegistry(IYuoLocationRegistry locations) :
         return new YuoLocationKey("actor", actorId.Value.ToString());
     }
 
-    private static YuoActorAddress ToYuoAddress(ActorAddress address)
+    private YuoActorAddress ToYuoAddress(ActorAddress address)
     {
-        return new YuoActorAddress(address.NodeId, "default", address.FiberId, address.ActorId.Value, address.Endpoint);
+        return new YuoActorAddress(address.NodeId, _processId, address.FiberId, address.ActorId.Value, address.Endpoint);
     }
 
     private static ActorAddress ToActorAddress(YuoActorAddress address)
