@@ -2282,3 +2282,18 @@ InvalidOperationException。ScheduleOnce/ScheduleRepeated 仅注册不等待，
 显式传入的 TTL 原样透传。
 测试：回归覆盖缺省套用与显式透传两条路径。
 ```
+
+### 实体 Actor 跨 Fiber 派发无 World 归属校验且无反注册（已修复）
+
+```text
+问题：YuoEntityActorRegistry 是宿主级共享表，YuoEntityActorDispatcher
+解析后不校验实体归属——Fiber B 的 mailbox 派发可拿到 Fiber A 的实体，
+handler 在错误 Fiber 上下文直接改 ECS 状态，破坏单所有权信条。
+YuoServerHost 只有注册没有对称反注册，actor 销毁后 transport/location
+/实体表三处残留可路由死地址。
+修复：YuoEntityActorDispatcher 新增可选 ownedWorld（Server 装配与
+GameRuntime 已接入），不匹配按 NotFound 拒绝；YuoServerHost 新增
+UnregisterLocalEntityActorAsync，先摘两级 Location 再移 transport
+endpoint 与实体映射。
+测试：Server.Tests 覆盖跨 World 拒绝与反注册后三表清空。
+```

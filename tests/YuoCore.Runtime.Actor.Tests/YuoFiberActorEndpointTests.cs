@@ -44,7 +44,7 @@ public sealed class YuoFiberActorEndpointTests
         var entities = new YuoEntityActorRegistry();
         entities.Register(actorId, entity);
         var handlers = new YuoActorHandlerRegistry().Add(new AddPendingHandler());
-        var endpoint = new YuoFiberActorEndpoint(fiber, new YuoEntityActorDispatcher(entities, handlers));
+        var endpoint = new YuoFiberActorEndpoint(fiber, new YuoEntityActorDispatcher(entities, handlers, fiber.World));
 
         var responseTask = endpoint.InvokeAsync(ActorEnvelope.ForRequest(new AddPending(actorId, 7))).AsTask();
         await fiber.TickAsync();

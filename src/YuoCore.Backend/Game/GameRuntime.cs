@@ -60,7 +60,7 @@ public sealed class GameRuntime : IDisposable
                         MaxMailboxMessagesPerTick = 100_000
                     });
                 var stats = fiber.World.WorldMain.AddComponent<YuoRuntimeStatsComponent>();
-                var dispatcher = new YuoEntityActorDispatcher(_actorEntities, _actorHandlers);
+                var dispatcher = new YuoEntityActorDispatcher(_actorEntities, _actorHandlers, fiber.World);
                 var endpoint = new YuoFiberActorEndpoint(fiber, dispatcher);
                 _shards.Add(new GameShard(i, fiber, stats, endpoint));
             }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using YuoCore.Actor;
 using YuoCore.Config;
@@ -15,6 +16,7 @@ public sealed class YuoServerHost : IAsyncDisposable, IDisposable
 {
     private readonly YuoStartConfig _config;
     private readonly Dictionary<long, YuoFiberActorEndpoint> _actorEndpoints = new();
+    private readonly ConcurrentDictionary<ActorId, (ActorAddress Address, YuoLocationKey? LocationKey)> _localActors = new();
     private readonly List<YuoActorHandlerScanReport> _actorHandlerScanReports = new();
     private bool _started;
 
@@ -98,7 +100,7 @@ public sealed class YuoServerHost : IAsyncDisposable, IDisposable
             // endpoint 只负责把消息排入这个 Fiber 自己的 mailbox，后续仍由 Fiber Tick 串行进入 ECS。
             _actorEndpoints[yuoFiber.Id] = new YuoFiberActorEndpoint(
                 yuoFiber,
-                new YuoEntityActorDispatcher(ActorEntities, ActorHandlers));
+                new YuoEntityActorDispatcher(ActorEntities, ActorHandlers, yuoFiber.World));
         }
 
         _started = true;
@@ -124,6 +126,7 @@ public sealed class YuoServerHost : IAsyncDisposable, IDisposable
         var address = new ActorAddress(_config.NodeId, checked((int)fiber.Id), actorId);
         ActorEntities.Register(actorId, entity);
         ActorTransport.RegisterEndpoint(address, endpoint);
+        _localActors[actorId] = (address, locationKey);
         try
         {
             await ActorLocations.RegisterAsync(actorId, address, cancellationToken).ConfigureAwait(false);
@@ -144,6 +147,7 @@ public sealed class YuoServerHost : IAsyncDisposable, IDisposable
         {
             // Actor 暴露给其他模块前需要本地 endpoint、ActorLocation 和业务 Location 保持一致。
             // 任一步失败都回滚本地表和已发布的 actor location，避免留下半注册 actor。
+            _localActors.TryRemove(actorId, out _);
             ActorEntities.Unregister(actorId);
             ActorTransport.UnregisterEndpoint(address);
             await ActorLocations.UnregisterAsync(actorId, CancellationToken.None).ConfigureAwait(false);
@@ -151,6 +155,30 @@ public sealed class YuoServerHost : IAsyncDisposable, IDisposable
         }
 
         return address;
+    }
+
+    /// <summary>
+    /// 反注册本地 Actor：先摘掉两级 Location 让新消息路由失败，
+    /// 再移除 transport endpoint 与实体映射，避免留下可路由的死地址。
+    /// </summary>
+    public async ValueTask UnregisterLocalEntityActorAsync(
+        ActorId actorId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_started) throw new InvalidOperationException("YuoServerHost has not started.");
+
+        await ActorLocations.UnregisterAsync(actorId, cancellationToken).ConfigureAwait(false);
+        if (_localActors.TryRemove(actorId, out var registration))
+        {
+            if (registration.LocationKey is { } locationKey)
+            {
+                await Location.RemoveAsync(locationKey, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+
+            ActorTransport.UnregisterEndpoint(registration.Address);
+        }
+
+        ActorEntities.Unregister(actorId);
     }
 
     public ValueTask TickAsync(CancellationToken cancellationToken = default)
@@ -163,6 +191,7 @@ public sealed class YuoServerHost : IAsyncDisposable, IDisposable
     {
         Runtime.Dispose();
         _actorEndpoints.Clear();
+        _localActors.Clear();
         _started = false;
     }
 
