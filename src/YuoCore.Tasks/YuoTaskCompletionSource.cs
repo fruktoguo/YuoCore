@@ -140,14 +140,16 @@ public sealed class YuoTaskCompletionSource
             throw new InvalidOperationException("YuoTask can only be consumed once.");
         }
 
+        var status = Volatile.Read(ref _status);
+        if (status is Pending or Completing)
+        {
+            // 未完成取结果属于误用：完成方仍持有本 source，此处绝不能还池，
+            // 否则完成方随后的 TrySet 会写穿复用后的新租户任务。
+            throw new InvalidOperationException("YuoTask has not completed.");
+        }
+
         try
         {
-            var status = Volatile.Read(ref _status);
-            if (status is Pending or Completing)
-            {
-                throw new InvalidOperationException("YuoTask has not completed.");
-            }
-
             if (status is Faulted or Canceled)
             {
                 _exception?.Throw();
@@ -414,14 +416,16 @@ public sealed class YuoTaskCompletionSource<T>
             throw new InvalidOperationException("YuoTask can only be consumed once.");
         }
 
+        var status = Volatile.Read(ref _status);
+        if (status is Pending or Completing)
+        {
+            // 未完成取结果属于误用：完成方仍持有本 source，此处绝不能还池，
+            // 否则完成方随后的 TrySet 会写穿复用后的新租户任务。
+            throw new InvalidOperationException("YuoTask has not completed.");
+        }
+
         try
         {
-            var status = Volatile.Read(ref _status);
-            if (status is Pending or Completing)
-            {
-                throw new InvalidOperationException("YuoTask has not completed.");
-            }
-
             if (status is Faulted or Canceled)
             {
                 _exception?.Throw();

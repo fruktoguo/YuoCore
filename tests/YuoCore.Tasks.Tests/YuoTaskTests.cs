@@ -462,6 +462,58 @@ public class YuoTaskTests
         }
     }
 
+    // 以下用例刻意直接调用 GetResult 验证同步取结果的池化边界（await 未完成任务会挂起而非抛错），
+    // 非真实 await 路径，抑制 xUnit1031 阻塞告警。
+#pragma warning disable xUnit1031
+    [Fact]
+    public void Pending_task_getresult_does_not_return_source_to_pool()
+    {
+        // 未完成取结果属于误用，但完成方仍持有该 source；
+        // 若此时还池，完成方随后的 SetResult 会写穿复用后的新租户。
+        var source = YuoTaskCompletionSource<int>.Rent();
+        var task = source.Task;
+
+        Assert.Throws<InvalidOperationException>(() => task.GetAwaiter().GetResult());
+
+        var next = YuoTaskCompletionSource<int>.Rent();
+        Assert.NotSame(source, next);
+
+        source.SetResult(42);
+        next.SetResult(7);
+        Assert.Equal(7, next.Task.GetAwaiter().GetResult());
+    }
+
+    [Fact]
+    public void Pending_nongeneric_task_getresult_does_not_return_source_to_pool()
+    {
+        var source = YuoTaskCompletionSource.Rent();
+        var task = source.Task;
+
+        Assert.Throws<InvalidOperationException>(() => task.GetAwaiter().GetResult());
+
+        var next = YuoTaskCompletionSource.Rent();
+        Assert.NotSame(source, next);
+
+        source.SetResult();
+    }
+
+    [Fact]
+    public void Consumed_completion_source_returns_to_pool()
+    {
+        var source = YuoTaskCompletionSource<int>.Rent();
+        var task = source.Task;
+
+        source.SetResult(3);
+        Assert.Equal(3, task.GetAwaiter().GetResult());
+
+        var next = YuoTaskCompletionSource<int>.Rent();
+        Assert.Same(source, next);
+
+        next.SetResult(9);
+        Assert.Equal(9, next.Task.GetAwaiter().GetResult());
+    }
+#pragma warning restore xUnit1031
+
     private static async YuoTask CompleteSynchronouslyAsync()
     {
         await YuoTask.CompletedTask;
