@@ -53,7 +53,11 @@ namespace YuoCore.Ecs
         /// </summary>
         public void UnRegisterEntity(YuoEntity entity)
         {
-            Entities.Remove(entity.EntityData.Id);
+            if (Entities.Remove(entity.EntityData.Id))
+            {
+                // 实体真正移出世界时才回收稠密索引并清理稀疏存储残留槽位
+                ReleaseEntityIndex(entity.EntityIndex);
+            }
         }
 
         /// <summary>

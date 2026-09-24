@@ -19,6 +19,7 @@ namespace YuoCore.Ecs
             systemsOfTag = new();
             systemsOfComponent = new();
             systemsOfBaseComponent = new();
+            ResetComponentStores();
 
             if (setAsDefault)
             {
@@ -64,6 +65,7 @@ namespace YuoCore.Ecs
             // 清理所有集合
             Entities.Clear();
             components.Clear();
+            ResetComponentStores();
             systemsOfTag.Clear();
             systemsOfComponent.Clear();
             systemsOfBaseComponent.Clear();

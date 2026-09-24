@@ -79,9 +79,42 @@ namespace YuoCore.Ecs
     {
         #region 组件管理
 
+        /// <summary>
+        /// 每个泛型组件类型的 ComponentTypeId 静态缓存，避免每次调用都解析 Type。
+        /// </summary>
+        private static class ComponentIdCache<T>
+        {
+            internal static readonly int Id = ComponentTypeRegistry.GetOrAddId(typeof(T));
+        }
+
         public T GetComponent<T>() where T : YuoComponent
         {
-            return GetComponent(typeof(T)) as T;
+            return GetComponentById(ComponentIdCache<T>.Id, typeof(T)) as T;
+        }
+
+        /// <summary>
+        /// 按 ComponentTypeId 直达稀疏存储的组件查找，与 GetComponent(Type) 语义一致。
+        /// </summary>
+        internal YuoComponent GetComponentById(int componentId, Type type)
+        {
+            if (IsDisposed) return null;
+            var component = World.GetComponentStore(componentId)?.Get(EntityIndex);
+
+            // 绕过 API 直接写 Components 字典的边角情况回退字典兜底
+            if (component == null)
+            {
+                Components.TryGetValue(type, out component);
+            }
+
+            if (component != null) return component;
+#if UNITY_EDITOR
+            if (GetBaseComponent(type) is { } c)
+            {
+                "应该使用[GetBaseComponent]".LogError();
+                return c;
+            }
+#endif
+            return null;
         }
 
         public T GetComponentAnyType<T>()
@@ -152,6 +185,13 @@ namespace YuoCore.Ecs
 
         public YuoComponent GetComponent(Type type)
         {
+            var componentId = ComponentTypeRegistry.GetId(type);
+            if (componentId >= 0)
+            {
+                return GetComponentById(componentId, type);
+            }
+
+            // 未注册类型不可能进入稀疏存储（注册发生在字典写入点位），回退字典保持兼容
             if (IsDisposed) return null;
             if (Components.TryGetValue(type, out var component))
                 return component;
@@ -308,12 +348,14 @@ namespace YuoCore.Ecs
             {
                 component.Entity = this;
                 Components.Add(component.Type, component);
+                World.StoreSetComponent(this, component.Type, component);
                 Parent?.ChildComponents.AddItem(component.Type, component);
                 World.AddComponent(this, component);
             }
             else
             {
                 Components[component.Type] = component;
+                World.StoreSetComponent(this, component.Type, component);
                 component.Entity = this;
                 World.SetComponent(componentTemp, component);
             }
@@ -339,7 +381,11 @@ namespace YuoCore.Ecs
         {
             // $"{this} AddComponent:{component.Name}".Log();
             component.Entity = this;
-            Components.TryAdd(type, component);
+            if (Components.TryAdd(type, component))
+            {
+                // 字典真正写入时才同步稀疏存储，保持与 Components 完全一致的 key 语义
+                World.StoreSetComponent(this, type, component);
+            }
             World.AddComponent(this, component);
             Parent?.AddChildComponent(type, component);
         }
@@ -365,6 +411,7 @@ namespace YuoCore.Ecs
             if (!Components.ContainsKey(component.Type)) return;
             World.RemoveComponent(this, component);
             Components.Remove(component.Type);
+            World.StoreRemoveComponent(this, component.Type);
             if (component.HasBaseType)
             {
                 BaseComponents.RemoveItem(component.BaseComponentType, component);

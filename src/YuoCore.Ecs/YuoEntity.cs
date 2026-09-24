@@ -8,6 +8,11 @@ namespace YuoCore.Ecs
         public YuoWorld World { get; private set; }
         public YuoEntity Parent { get; private set; }
         public EntityComponent EntityData { get; private set; }
+
+        /// <summary>
+        /// 世界内稠密实体索引（0 起递增，销毁后回收复用），稀疏组件存储按它寻址。
+        /// </summary>
+        internal int EntityIndex { get; private set; } = -1;
         public Dictionary<Type, YuoComponent> Components { get; } = new();
         public HashSet<YuoEntity> Children { get; } = new();
         public MultiHashSetMap<Type, YuoComponent> ChildComponents { get; private set; } = new();
@@ -28,6 +33,8 @@ namespace YuoCore.Ecs
         public YuoEntity(YuoWorld world, long id)
         {
             World = world ?? throw new ArgumentNullException(nameof(world));
+            // 世界内稠密实体索引：稀疏组件存储的寻址键，实体销毁后回收复用
+            EntityIndex = world.AllocateEntityIndex();
             //EntityComponent为基础组件,无法移除,不会显示在组件列表中,但当销毁时会自动移除
             //可以通过获取EntityComponent是否为null来判断Entity是否释放
             EntityData = new EntityComponent();
