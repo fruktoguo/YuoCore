@@ -185,11 +185,13 @@ namespace YuoCore.Ecs
         // 稠密实体集合：公开的 Entities(HashSet) 仅作成员视图供 Contains/枚举兼容，
         // 实际迭代走 _denseEntities 连续数组，缓存友好且无迭代器节点开销。
         // 删除置墓碑(null)保序不移位；加入追加尾部维持加入顺序稳定。
+        // 反查表按世界内 EntityIndex 建 int 稀疏数组（存槽位+1，0 为空），
+        // 比 Dictionary 更省内存且无哈希开销。
         private YuoEntity[] _denseEntities = Array.Empty<YuoEntity>();
+        private int[] _entitySlots = Array.Empty<int>();
         private int _denseCount;   // 已用槽位数（含墓碑）
         private int _denseHoles;   // 墓碑数
         private int _denseLive;    // 存活实体数
-        private Dictionary<YuoEntity, int> _densePositions; // 实体→槽位，首次加入时分配
 
         private void AddEntity(YuoEntity entity)
         {
@@ -202,7 +204,15 @@ namespace YuoCore.Ecs
                 dense = _denseEntities;
             }
 
-            (_densePositions ??= new Dictionary<YuoEntity, int>())[entity] = _denseCount;
+            var entityIndex = entity.EntityIndex;
+            if (entityIndex >= _entitySlots.Length)
+            {
+                var size = _entitySlots.Length;
+                while (size <= entityIndex) size = Math.Max(4, size * 2);
+                Array.Resize(ref _entitySlots, size);
+            }
+
+            _entitySlots[entityIndex] = _denseCount + 1;
             dense[_denseCount++] = entity;
             _denseLive++;
         }
@@ -212,9 +222,11 @@ namespace YuoCore.Ecs
             if (!Entities.Remove(entity)) return;
 
             // 实体只在 HashSet 中（外部直接写入等情形）：等下次压实统一校正。
-            if (_densePositions != null && _densePositions.Remove(entity, out var pos))
+            var entityIndex = entity.EntityIndex;
+            if ((uint)entityIndex < (uint)_entitySlots.Length && _entitySlots[entityIndex] != 0)
             {
-                _denseEntities[pos] = null;
+                _denseEntities[_entitySlots[entityIndex] - 1] = null;
+                _entitySlots[entityIndex] = 0;
                 _denseHoles++;
             }
 
@@ -232,13 +244,20 @@ namespace YuoCore.Ecs
                     Array.Resize(ref _denseEntities, entities.Count);
                 }
 
-                _densePositions?.Clear();
-                _densePositions ??= new Dictionary<YuoEntity, int>(entities.Count);
+                Array.Clear(_entitySlots, 0, _entitySlots.Length);
                 _denseCount = 0;
                 foreach (var entity in entities)
                 {
+                    var entityIndex = entity.EntityIndex;
+                    if (entityIndex >= _entitySlots.Length)
+                    {
+                        var size = _entitySlots.Length;
+                        while (size <= entityIndex) size = Math.Max(4, size * 2);
+                        Array.Resize(ref _entitySlots, size);
+                    }
+
                     _denseEntities[_denseCount] = entity;
-                    _densePositions[entity] = _denseCount;
+                    _entitySlots[entityIndex] = _denseCount + 1;
                     _denseCount++;
                 }
 
@@ -258,7 +277,7 @@ namespace YuoCore.Ecs
                 {
                     denseArr[write] = entity;
                     denseArr[i] = null;
-                    _densePositions[entity] = write;
+                    _entitySlots[entity.EntityIndex] = write + 1;
                 }
 
                 write++;
@@ -295,10 +314,10 @@ namespace YuoCore.Ecs
         {
             Entities.Clear();
             Array.Clear(_denseEntities, 0, _denseCount);
+            Array.Clear(_entitySlots, 0, _entitySlots.Length);
             _denseCount = 0;
             _denseHoles = 0;
             _denseLive = 0;
-            _densePositions?.Clear();
             systemTags.Clear();
             influenceTypes.Clear();
             _requiredComponentIds = null;
