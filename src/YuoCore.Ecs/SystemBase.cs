@@ -199,16 +199,52 @@ namespace YuoCore.Ecs
             Entities.Clear();
             systemTags.Clear();
             influenceTypes.Clear();
+            _requiredComponentIds = null;
+            _requiredComponentIdsSourceCount = -1;
             _pendingJoinEntities?.Clear();
             _pendingLeaveEntities?.Clear();
         }
 
+        // influenceTypes 对应的组件 id 缓存：构建后掩码按位判定代替逐类型 HasComponent。
+        // 记录构建时的列表长度，长度变化时重建以兼容运行期改写 influenceTypes 的用法。
+        private int[] _requiredComponentIds;
+        private int _requiredComponentIdsSourceCount = -1;
+
+        private int[] RequiredComponentIds
+        {
+            get
+            {
+                var ids = _requiredComponentIds;
+                if (ids == null || _requiredComponentIdsSourceCount != influenceTypes.Count)
+                {
+                    ids = new int[influenceTypes.Count];
+                    for (var i = 0; i < ids.Length; i++)
+                    {
+                        ids[i] = ComponentTypeRegistry.GetOrAddId(influenceTypes[i]);
+                    }
+
+                    _requiredComponentIds = ids;
+                    _requiredComponentIdsSourceCount = influenceTypes.Count;
+                }
+
+                return ids;
+            }
+        }
+
+        internal virtual bool MatchesRequiredComponents(YuoEntity entity)
+        {
+            var required = RequiredComponentIds;
+            for (var i = 0; i < required.Length; i++)
+            {
+                if (!entity.TestComponentMask(required[i])) return false;
+            }
+
+            return true;
+        }
+
         internal virtual bool CheckValidEntity(YuoEntity entity)
         {
-            foreach (var influenceType in influenceTypes)
-            {
-                if (!entity.HasComponent(influenceType)) return false;
-            }
+            if (!MatchesRequiredComponents(entity)) return false;
 
             if (_isIteratingEntities)
             {
@@ -306,11 +342,37 @@ namespace YuoCore.Ecs
             }
         }
 
+        // baseTypes 对应的组件 id 缓存，语义同 RequiredComponentIds。
+        private int[] _requiredBaseTypeIds;
+        private int _requiredBaseTypeIdsSourceCount = -1;
+
+        private int[] RequiredBaseTypeIds
+        {
+            get
+            {
+                var ids = _requiredBaseTypeIds;
+                if (ids == null || _requiredBaseTypeIdsSourceCount != baseTypes.Count)
+                {
+                    ids = new int[baseTypes.Count];
+                    for (var i = 0; i < ids.Length; i++)
+                    {
+                        ids[i] = ComponentTypeRegistry.GetOrAddId(baseTypes[i]);
+                    }
+
+                    _requiredBaseTypeIds = ids;
+                    _requiredBaseTypeIdsSourceCount = baseTypes.Count;
+                }
+
+                return ids;
+            }
+        }
+
         internal override bool CheckValidEntity(YuoEntity entity)
         {
-            foreach (var baseType in baseTypes)
+            var requiredBase = RequiredBaseTypeIds;
+            for (var i = 0; i < requiredBase.Length; i++)
             {
-                if (!entity.HasBaseComponent(baseType))
+                if (!entity.TestBaseComponentMask(requiredBase[i]))
                 {
                     return false;
                 }
@@ -334,6 +396,8 @@ namespace YuoCore.Ecs
             baseTypes.Clear();
             typeIsBase.Clear();
             allType.Clear();
+            _requiredBaseTypeIds = null;
+            _requiredBaseTypeIdsSourceCount = -1;
         }
     }
 }

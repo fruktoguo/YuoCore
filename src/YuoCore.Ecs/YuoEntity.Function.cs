@@ -77,6 +77,90 @@ namespace YuoCore.Ecs
 
     public partial class YuoEntity
     {
+        #region 组件掩码（内部簿记，镜像 Components/BaseComponents 字典 key 集合）
+
+        // 组件掩码：bit(componentId)=1 等价于 Components.ContainsKey(keyType)。
+        // 只在 Components 字典真正写入的点位同步置位/清除，语义与字典完全一致。
+        private ulong[] _componentMask;
+
+        // 基础组件掩码：bit(componentId)=1 等价于 BaseComponents.ContainsKey(baseType)。
+        // 注意 BaseComponents 的 key 在清空后仍残留（RemoveItem 不移除 key），
+        // 因此掩码只增不清，与字典 ContainsKey 语义保持一致。
+        private ulong[] _baseComponentMask;
+
+        // 每种基础组件类型的"首个"组件缓存，等价于 BaseComponents[baseType] 的首枚举元素。
+        private YuoComponent[] _baseSlots;
+
+        private static void EnsureMaskCapacity(ref ulong[] mask, int componentId)
+        {
+            var words = (componentId >> 6) + 1;
+            if (mask != null && mask.Length >= words) return;
+            var newSize = mask == null ? 4 : mask.Length;
+            while (newSize < words) newSize <<= 1;
+            Array.Resize(ref mask, newSize);
+        }
+
+        internal void SetComponentMask(int componentId)
+        {
+            EnsureMaskCapacity(ref _componentMask, componentId);
+            _componentMask[componentId >> 6] |= 1ul << (componentId & 63);
+        }
+
+        internal void ClearComponentMask(int componentId)
+        {
+            var mask = _componentMask;
+            var word = (uint)componentId >> 6;
+            if (mask == null || word >= (uint)mask.Length) return;
+            mask[word] &= ~(1ul << (componentId & 63));
+        }
+
+        internal bool TestComponentMask(int componentId)
+        {
+            var mask = _componentMask;
+            var word = (uint)componentId >> 6;
+            return mask != null && word < (uint)mask.Length && (mask[word] & (1ul << (componentId & 63))) != 0;
+        }
+
+        internal void SetBaseComponentMask(int componentId)
+        {
+            EnsureMaskCapacity(ref _baseComponentMask, componentId);
+            _baseComponentMask[componentId >> 6] |= 1ul << (componentId & 63);
+        }
+
+        internal bool TestBaseComponentMask(int componentId)
+        {
+            var mask = _baseComponentMask;
+            var word = (uint)componentId >> 6;
+            return mask != null && word < (uint)mask.Length && (mask[word] & (1ul << (componentId & 63))) != 0;
+        }
+
+        /// <summary>
+        /// BaseComponents[baseType] 集合变化后的统一刷新点（增删组件都会调用），
+        /// 保证 _baseSlots 始终等于该集合当前的首枚举元素。
+        /// </summary>
+        internal void NoteBaseComponentsChanged(Type baseType)
+        {
+            var id = ComponentTypeRegistry.GetOrAddId(baseType);
+            var slots = _baseSlots;
+            if (slots == null || id >= slots.Length)
+            {
+                var newSize = slots == null ? 8 : slots.Length;
+                while (newSize <= id) newSize <<= 1;
+                Array.Resize(ref _baseSlots, newSize);
+                slots = _baseSlots;
+            }
+
+            slots[id] = BaseComponents.GetFirst(baseType);
+        }
+
+        internal YuoComponent GetBaseComponentById(int componentId)
+        {
+            var slots = _baseSlots;
+            return slots != null && (uint)componentId < (uint)slots.Length ? slots[componentId] : null;
+        }
+
+        #endregion
+
         #region 组件管理
 
         /// <summary>
@@ -209,6 +293,14 @@ namespace YuoCore.Ecs
         public YuoComponent GetBaseComponent(Type type)
         {
             if (IsDisposed) return null;
+            var componentId = ComponentTypeRegistry.GetId(type);
+            if (componentId >= 0)
+            {
+                // 首元素缓存等价于 BaseComponents[type] 的首枚举元素
+                var cached = GetBaseComponentById(componentId);
+                if (cached != null) return cached;
+            }
+
             return BaseComponents.TryGetValue(type, out var component)
                 ? component.Count > 0 ? component.FirstOrDefault() : null
                 : null;
@@ -316,21 +408,26 @@ namespace YuoCore.Ecs
 
         public bool HasComponent<T>() where T : YuoComponent
         {
-            return Components.ContainsKey(typeof(T));
+            return HasComponent(typeof(T));
         }
 
         public bool HasBaseComponent<T>() where T : YuoComponent
         {
-            return BaseComponents.ContainsKey(typeof(T));
+            return HasBaseComponent(typeof(T));
         }
 
         public bool HasComponent(Type type)
         {
+            // 掩码等价于 Components.ContainsKey；未命中再走字典兜底直接写入的边角情况
+            var componentId = ComponentTypeRegistry.GetId(type);
+            if (componentId >= 0 && TestComponentMask(componentId)) return true;
             return Components.ContainsKey(type);
         }
 
         public bool HasBaseComponent(Type type)
         {
+            var componentId = ComponentTypeRegistry.GetId(type);
+            if (componentId >= 0 && TestBaseComponentMask(componentId)) return true;
             return BaseComponents.ContainsKey(type);
         }
 
@@ -348,14 +445,18 @@ namespace YuoCore.Ecs
             {
                 component.Entity = this;
                 Components.Add(component.Type, component);
-                World.StoreSetComponent(this, component.Type, component);
+                var addedId = ComponentTypeRegistry.GetOrAddId(component.Type);
+                SetComponentMask(addedId);
+                World.StoreSetComponent(this, addedId, component);
                 Parent?.ChildComponents.AddItem(component.Type, component);
                 World.AddComponent(this, component);
             }
             else
             {
                 Components[component.Type] = component;
-                World.StoreSetComponent(this, component.Type, component);
+                var replacedId = ComponentTypeRegistry.GetOrAddId(component.Type);
+                SetComponentMask(replacedId);
+                World.StoreSetComponent(this, replacedId, component);
                 component.Entity = this;
                 World.SetComponent(componentTemp, component);
             }
@@ -383,8 +484,10 @@ namespace YuoCore.Ecs
             component.Entity = this;
             if (Components.TryAdd(type, component))
             {
-                // 字典真正写入时才同步稀疏存储，保持与 Components 完全一致的 key 语义
-                World.StoreSetComponent(this, type, component);
+                // 字典真正写入时才同步掩码与稀疏存储，保持与 Components 完全一致的 key 语义
+                var componentId = ComponentTypeRegistry.GetOrAddId(type);
+                SetComponentMask(componentId);
+                World.StoreSetComponent(this, componentId, component);
             }
             World.AddComponent(this, component);
             Parent?.AddChildComponent(type, component);
@@ -411,10 +514,17 @@ namespace YuoCore.Ecs
             if (!Components.ContainsKey(component.Type)) return;
             World.RemoveComponent(this, component);
             Components.Remove(component.Type);
-            World.StoreRemoveComponent(this, component.Type);
+            var removedId = ComponentTypeRegistry.GetId(component.Type);
+            if (removedId >= 0)
+            {
+                ClearComponentMask(removedId);
+                World.StoreRemoveComponent(this, removedId);
+            }
             if (component.HasBaseType)
             {
                 BaseComponents.RemoveItem(component.BaseComponentType, component);
+                // 首元素缓存跟随集合当前枚举首项；掩码位保留以匹配 ContainsKey 残留语义
+                NoteBaseComponentsChanged(component.BaseComponentType);
             }
 
             Parent?.RemoveChildComponent(component);
@@ -548,6 +658,7 @@ namespace YuoCore.Ecs
             }
 
             Components.Clear();
+            _componentMask = null;
             ChildComponents.Clear();
             ChildComponents = null;
 

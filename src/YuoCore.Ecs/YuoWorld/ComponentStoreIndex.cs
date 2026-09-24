@@ -86,6 +86,14 @@ namespace YuoCore.Ecs
         }
 
         /// <summary>
+        /// 与 entity.Components[keyType]=component 同点位的存储写入（已解析 id）。
+        /// </summary>
+        internal void StoreSetComponent(YuoEntity entity, int componentId, YuoComponent component)
+        {
+            GetOrCreateComponentStore(componentId).Set(entity.EntityIndex, component);
+        }
+
+        /// <summary>
         /// 与 entity.Components.Remove(keyType) 同点位的存储移除。
         /// </summary>
         internal void StoreRemoveComponent(YuoEntity entity, Type keyType)
@@ -93,6 +101,14 @@ namespace YuoCore.Ecs
             var id = ComponentTypeRegistry.GetId(keyType);
             if (id < 0) return;
             GetComponentStore(id)?.Remove(entity.EntityIndex);
+        }
+
+        /// <summary>
+        /// 与 entity.Components.Remove(keyType) 同点位的存储移除（已解析 id）。
+        /// </summary>
+        internal void StoreRemoveComponent(YuoEntity entity, int componentId)
+        {
+            GetComponentStore(componentId)?.Remove(entity.EntityIndex);
         }
 
         /// <summary>

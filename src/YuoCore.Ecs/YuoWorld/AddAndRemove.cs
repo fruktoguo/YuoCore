@@ -119,6 +119,9 @@ namespace YuoCore.Ecs
                 {
                     component.BaseComponentType = baseType;
                     entity.BaseComponents.AddItem(baseType, component);
+                    // 基础组件掩码置位（残留语义与 ContainsKey 一致）并刷新首元素缓存
+                    entity.SetBaseComponentMask(ComponentTypeRegistry.GetOrAddId(baseType));
+                    entity.NoteBaseComponentsChanged(baseType);
                     RunSystemOfBase<IAwake>(entity, baseType);
                 }
 
