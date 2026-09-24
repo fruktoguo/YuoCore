@@ -115,6 +115,8 @@ namespace YuoCore.Ecs
         void CreateComponent(Type type)
         {
             allComponentType.TryAdd(type.Name, type);
+            // 扫描到的组件类型立即分配 ComponentTypeId，后续热路径以 int 索引代替 Type 解析。
+            ComponentTypeRegistry.GetOrAddId(type);
             if (!components.ContainsKey(type))
             {
                 components.Add(type, new());
