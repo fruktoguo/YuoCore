@@ -199,6 +199,9 @@ namespace YuoCore.Ecs
             systemsOfComponent.Clear();
             systemsOfTag.Clear();
             systemDic.Clear();
+            // 组件命中索引与 systemsOfComponent 同步重建；
+            // systemsOfBaseComponent 未清理，其索引列表仍是同一引用，保持一致即可。
+            ResetComponentSystemIndex();
 
             foreach (var system in allSystem)
             {

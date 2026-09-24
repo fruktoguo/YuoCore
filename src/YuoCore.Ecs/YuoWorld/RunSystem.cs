@@ -88,7 +88,9 @@ namespace YuoCore.Ecs
         private void RunSystemOfTag(Type tagType, YuoComponent component)
         {
             if (component.IsUnusable()) return;
-            if (GetSystemOfComponent(component.Type, out var systems))
+            var componentId = ComponentTypeRegistry.GetId(component.Type);
+            var systems = componentId >= 0 ? GetSystemsByComponentId(componentId) : null;
+            if (systems != null)
             {
                 foreach (var system in systems)
                 {
@@ -137,7 +139,9 @@ namespace YuoCore.Ecs
             if (component.IsUnusable()) return;
             if (component.BaseComponentType != null)
             {
-                if (GetSystemOfBaseComponent(component.BaseComponentType, out var systems))
+                var baseTypeId = ComponentTypeRegistry.GetId(component.BaseComponentType);
+                var systems = baseTypeId >= 0 ? GetSystemsByBaseTypeId(baseTypeId) : null;
+                if (systems != null)
                 {
                     foreach (var system in systems)
                     {
@@ -177,7 +181,12 @@ namespace YuoCore.Ecs
         {
             var runType = typeof(T);
 
-            foreach (var system in systemsOfComponent[componentType])
+            // 生命周期命中表：componentId 直查，免 Type 字典查找
+            var componentId = ComponentTypeRegistry.GetId(componentType);
+            var systems = componentId >= 0 ? GetSystemsByComponentId(componentId) : null;
+            if (systems == null) return;
+
+            foreach (var system in systems)
             {
                 if (system.CheckValidEntity(entity))
                 {
@@ -203,7 +212,9 @@ namespace YuoCore.Ecs
         /// </summary>
         private void RunSystemOfBase<T>(YuoEntity entity, Type baseComponentType) where T : ISystemTag
         {
-            if (GetSystemOfBaseComponent(baseComponentType, out var systems))
+            var baseTypeId = ComponentTypeRegistry.GetId(baseComponentType);
+            var systems = baseTypeId >= 0 ? GetSystemsByBaseTypeId(baseTypeId) : null;
+            if (systems != null)
             {
                 var runType = typeof(T);
                 foreach (var system in systems)

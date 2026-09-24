@@ -20,6 +20,7 @@ namespace YuoCore.Ecs
             systemsOfComponent = new();
             systemsOfBaseComponent = new();
             ResetComponentStores();
+            ResetLifecycleIndex();
 
             if (setAsDefault)
             {
@@ -69,6 +70,7 @@ namespace YuoCore.Ecs
             systemsOfTag.Clear();
             systemsOfComponent.Clear();
             systemsOfBaseComponent.Clear();
+            ResetLifecycleIndex();
             systemDic.Clear();
             allSystem.Clear();
 

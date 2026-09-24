@@ -73,6 +73,7 @@ namespace YuoCore.Ecs
         internal void RegisterSystem(SystemBase system, Type type)
         {
             systemsOfComponent.AddItem(type, system);
+            IndexSystemForComponent(type);
         }
 
         /// <summary>
@@ -85,6 +86,7 @@ namespace YuoCore.Ecs
                 $"System {system.Type.Name} 的 {type.Name} 不是 BaseComponent".LogError();
             }
             systemsOfBaseComponent.AddItem(type, system);
+            IndexBaseSystemForComponent(type);
         }
 
         /// <summary>
