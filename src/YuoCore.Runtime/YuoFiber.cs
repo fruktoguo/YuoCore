@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using YuoCore.Ecs;
 using YuoCore.Ecs.Log;
@@ -9,11 +10,41 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     // 当前正在执行 Tick 的 Fiber，随 async 上下文流动。
     // 用于同 Fiber CallAsync / Fiber 内等本 Fiber 驱动的 Timer 等死锁守卫。
     private static readonly AsyncLocal<YuoFiber?> s_current = new();
-    private readonly Channel<Func<YuoFiber, CancellationToken, ValueTask>> _mailbox;
+    private readonly Channel<MailboxItem> _mailbox;
     private readonly CancellationTokenSource _disposeCts = new();
     private int _pendingMessages;
     private bool _started;
     private bool _disposed;
+
+    /// <summary>
+    /// 池化的邮箱节点：同步消息与异步消息共用一条队列，
+    /// 消费后归还节点，fire-and-forget 投递在稳态下零分配。
+    /// </summary>
+    private sealed class MailboxItem
+    {
+        public Action<YuoFiber>? Sync;
+        public Func<YuoFiber, CancellationToken, ValueTask>? Async;
+
+        public void Reset()
+        {
+            Sync = null;
+            Async = null;
+        }
+    }
+
+    // 写入方可能来自任意线程，回收栈必须线程安全。
+    private static readonly ConcurrentStack<MailboxItem> s_itemPool = new();
+
+    private static MailboxItem RentItem()
+    {
+        return s_itemPool.TryPop(out var item) ? item : new MailboxItem();
+    }
+
+    private static void ReturnItem(MailboxItem item)
+    {
+        item.Reset();
+        s_itemPool.Push(item);
+    }
 
     internal YuoFiber(YuoFiberOptions options, YuoWorld? world = null)
     {
@@ -22,7 +53,7 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
         Name = string.IsNullOrWhiteSpace(options.Name) ? $"Fiber-{Id}" : options.Name;
         World = world ?? new YuoWorld();
         _mailbox = options.MaxMailboxCapacity > 0
-            ? Channel.CreateBounded<Func<YuoFiber, CancellationToken, ValueTask>>(
+            ? Channel.CreateBounded<MailboxItem>(
                 new BoundedChannelOptions(options.MaxMailboxCapacity)
                 {
                     SingleReader = true,
@@ -30,7 +61,7 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
                     AllowSynchronousContinuations = false,
                     FullMode = BoundedChannelFullMode.Wait
                 })
-            : Channel.CreateUnbounded<Func<YuoFiber, CancellationToken, ValueTask>>(
+            : Channel.CreateUnbounded<MailboxItem>(
                 new UnboundedChannelOptions
                 {
                     SingleReader = true,
@@ -73,34 +104,60 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     public ValueTask PostAsync(Action<YuoFiber> action, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(action);
-        return PostAsync((fiber, _) =>
+        ThrowIfDisposed();
+        // 池化节点直接承载同步委托，不再为每条消息分配包装闭包。
+        var item = RentItem();
+        item.Sync = action;
+        // 快速路径：未取消且邮箱未满时同步入队，连 async 状态机都省掉。
+        if (!cancellationToken.IsCancellationRequested && TryEnqueue(item))
         {
-            action(fiber);
             return ValueTask.CompletedTask;
-        }, cancellationToken);
+        }
+
+        return EnqueueAsync(item, cancellationToken);
     }
 
     public ValueTask PostAsync(Func<YuoFiber, CancellationToken, ValueTask> action, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(action);
         ThrowIfDisposed();
-        return EnqueueAsync(action, cancellationToken);
+        var item = RentItem();
+        item.Async = action;
+        if (!cancellationToken.IsCancellationRequested && TryEnqueue(item))
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        return EnqueueAsync(item, cancellationToken);
     }
 
-    private async ValueTask EnqueueAsync(
-        Func<YuoFiber, CancellationToken, ValueTask> action,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// 同步写入尝试：成功则计数已提交；失败归还节点并让调用方走等待路径。
+    /// </summary>
+    private bool TryEnqueue(MailboxItem item)
     {
         // 写入前计数：有界通道下阻塞中的 writer 也属于待处理压力；
         // 且避免 reader 先消费导致计数出现负值。
         Interlocked.Increment(ref _pendingMessages);
+        if (_mailbox.Writer.TryWrite(item)) return true;
+        Interlocked.Decrement(ref _pendingMessages);
+        return false;
+    }
+
+    private async ValueTask EnqueueAsync(
+        MailboxItem item,
+        CancellationToken cancellationToken)
+    {
+        // TryEnqueue 失败时计数已回退，这里重新计入阻塞中的投递。
+        Interlocked.Increment(ref _pendingMessages);
         try
         {
-            await _mailbox.Writer.WriteAsync(action, cancellationToken).ConfigureAwait(false);
+            await _mailbox.Writer.WriteAsync(item, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
             Interlocked.Decrement(ref _pendingMessages);
+            ReturnItem(item);
             throw;
         }
     }
@@ -124,7 +181,8 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
         // CallAsync 是跨 Fiber 同步请求的基础：调用方等待 TaskCompletionSource，
         // 真正的业务代码仍然排进目标 Fiber mailbox，由目标 Fiber 串行执行。
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-        await EnqueueAsync(async (fiber, token) =>
+        var item = RentItem();
+        item.Async = async (fiber, token) =>
         {
             if (cancellationToken.IsCancellationRequested)
             {
@@ -144,7 +202,12 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
             {
                 completion.TrySetException(e);
             }
-        }, cancellationToken).ConfigureAwait(false);
+        };
+
+        if (cancellationToken.IsCancellationRequested || !TryEnqueue(item))
+        {
+            await EnqueueAsync(item, cancellationToken).ConfigureAwait(false);
+        }
 
         return await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -156,16 +219,20 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
 
         var previous = s_current.Value;
         s_current.Value = this;
+        // 常见路径下调用方不传递可取消令牌：直接用 dispose 令牌，省掉每帧 linked CTS 分配。
+        var linkedCts = cancellationToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCts.Token)
+            : null;
         try
         {
             // mailbox 先于 World.Update 执行，保证本帧收到的命令可以在同一帧进入 ECS 逻辑。
             // MaxMailboxMessagesPerTick 用来限制突发消息把帧更新完全饿死。
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCts.Token);
-            await DrainMailboxAsync(linkedCts.Token).ConfigureAwait(false);
+            await DrainMailboxAsync(linkedCts?.Token ?? _disposeCts.Token).ConfigureAwait(false);
             World.Update();
         }
         finally
         {
+            linkedCts?.Dispose();
             s_current.Value = previous;
         }
     }
@@ -177,14 +244,17 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
 
         var previous = s_current.Value;
         s_current.Value = this;
+        var linkedCts = cancellationToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCts.Token)
+            : null;
         try
         {
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCts.Token);
-            await DrainMailboxAsync(linkedCts.Token).ConfigureAwait(false);
+            await DrainMailboxAsync(linkedCts?.Token ?? _disposeCts.Token).ConfigureAwait(false);
             World.FixedUpdate();
         }
         finally
         {
+            linkedCts?.Dispose();
             s_current.Value = previous;
         }
     }
@@ -217,7 +287,7 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
         while (processed++ < maxMessages)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!_mailbox.Reader.TryRead(out var action))
+            if (!_mailbox.Reader.TryRead(out var item))
             {
                 return;
             }
@@ -225,17 +295,34 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
             Interlocked.Decrement(ref _pendingMessages);
             try
             {
-                await action(this, cancellationToken).ConfigureAwait(false);
+                if (item.Sync is { } sync)
+                {
+                    sync(this);
+                }
+                else
+                {
+                    // 同步完成的 ValueTask 不产生额外挂起；真正异步的消息才进入状态机。
+                    var task = item.Async!(this, cancellationToken);
+                    if (!task.IsCompletedSuccessfully)
+                    {
+                        await task.ConfigureAwait(false);
+                    }
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                ReturnItem(item);
                 throw;
             }
             catch (Exception exception)
             {
                 // 单条 fire-and-forget 消息失败不得中断 tick，也不允许静默丢失
+                ReturnItem(item);
                 ReportUnhandledException(exception);
+                continue;
             }
+
+            ReturnItem(item);
         }
     }
 
