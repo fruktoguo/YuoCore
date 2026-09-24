@@ -126,25 +126,36 @@ namespace YuoCore.Ecs
             StartClock();
 #endif
             // 迭代期间 Entities 的成员变更先进入待决缓冲，本轮结束后统一并入，
-            // 避免 Run 内增删组件直接炸掉 HashSet 迭代器。
+            // 避免 Run 内增删组件直接炸掉迭代器。
             // 异常按实体隔离：单个实体失败只跳过该实体并保留完整证据，
             // 不再中断本轮剩余实体（与单实体 m_Run 的隔离语义一致）。
+            // 迭代前压实稠密数组：内部删除留下的墓碑做保序平移；
+            // 若外部代码直接改写了公开 Entities 导致数量偏差，则以 HashSet 为准整体重建。
+            if (_denseHoles > 0 || _denseLive != Entities.Count)
+            {
+                CompactDenseEntities();
+            }
+
             _isIteratingEntities = true;
             try
             {
+                var dense = _denseEntities;
+                var count = _denseCount;
                 if (YuoWorld.CloseSystemTry)
                 {
-                    foreach (var entity in Entities)
+                    for (var i = 0; i < count; i++)
                     {
-                        if (CheckCoverSystem(entity)) continue;
+                        var entity = dense[i];
+                        if (entity == null || CheckCoverSystem(entity)) continue;
                         RunEntity(entity);
                     }
                 }
                 else
                 {
-                    foreach (var entity in Entities)
+                    for (var i = 0; i < count; i++)
                     {
-                        if (CheckCoverSystem(entity)) continue;
+                        var entity = dense[i];
+                        if (entity == null || CheckCoverSystem(entity)) continue;
                         try
                         {
                             RunEntity(entity);
@@ -171,13 +182,99 @@ namespace YuoCore.Ecs
         private HashSet<YuoEntity> _pendingJoinEntities;
         private HashSet<YuoEntity> _pendingLeaveEntities;
 
+        // 稠密实体集合：公开的 Entities(HashSet) 仅作成员视图供 Contains/枚举兼容，
+        // 实际迭代走 _denseEntities 连续数组，缓存友好且无迭代器节点开销。
+        // 删除置墓碑(null)保序不移位；加入追加尾部维持加入顺序稳定。
+        private YuoEntity[] _denseEntities = Array.Empty<YuoEntity>();
+        private int _denseCount;   // 已用槽位数（含墓碑）
+        private int _denseHoles;   // 墓碑数
+        private int _denseLive;    // 存活实体数
+        private Dictionary<YuoEntity, int> _densePositions; // 实体→槽位，首次加入时分配
+
+        private void AddEntity(YuoEntity entity)
+        {
+            if (!Entities.Add(entity)) return;
+
+            var dense = _denseEntities;
+            if (_denseCount == dense.Length)
+            {
+                Array.Resize(ref _denseEntities, Math.Max(4, dense.Length * 2));
+                dense = _denseEntities;
+            }
+
+            (_densePositions ??= new Dictionary<YuoEntity, int>())[entity] = _denseCount;
+            dense[_denseCount++] = entity;
+            _denseLive++;
+        }
+
+        private void RemoveEntity(YuoEntity entity)
+        {
+            if (!Entities.Remove(entity)) return;
+
+            // 实体只在 HashSet 中（外部直接写入等情形）：等下次压实统一校正。
+            if (_densePositions != null && _densePositions.Remove(entity, out var pos))
+            {
+                _denseEntities[pos] = null;
+                _denseHoles++;
+            }
+
+            _denseLive--;
+        }
+
+        private void CompactDenseEntities()
+        {
+            if (_denseLive != Entities.Count)
+            {
+                // 与公开集合出现偏差（外部直接改写 Entities）：以 HashSet 为准重建。
+                var entities = Entities;
+                if (_denseEntities.Length < entities.Count)
+                {
+                    Array.Resize(ref _denseEntities, entities.Count);
+                }
+
+                _densePositions?.Clear();
+                _densePositions ??= new Dictionary<YuoEntity, int>(entities.Count);
+                _denseCount = 0;
+                foreach (var entity in entities)
+                {
+                    _denseEntities[_denseCount] = entity;
+                    _densePositions[entity] = _denseCount;
+                    _denseCount++;
+                }
+
+                _denseLive = _denseCount;
+                _denseHoles = 0;
+                return;
+            }
+
+            // 保序压实：非空槽位前移，其余槽位置空，同步槽位表。
+            var denseArr = _denseEntities;
+            var write = 0;
+            for (var i = 0; i < _denseCount; i++)
+            {
+                var entity = denseArr[i];
+                if (entity == null) continue;
+                if (write != i)
+                {
+                    denseArr[write] = entity;
+                    denseArr[i] = null;
+                    _densePositions[entity] = write;
+                }
+
+                write++;
+            }
+
+            _denseCount = write;
+            _denseHoles = 0;
+        }
+
         private void ApplyPendingEntityChanges()
         {
             if (_pendingJoinEntities is { Count: > 0 })
             {
                 foreach (var entity in _pendingJoinEntities)
                 {
-                    Entities.Add(entity);
+                    AddEntity(entity);
                 }
 
                 _pendingJoinEntities.Clear();
@@ -187,7 +284,7 @@ namespace YuoCore.Ecs
             {
                 foreach (var entity in _pendingLeaveEntities)
                 {
-                    Entities.Remove(entity);
+                    RemoveEntity(entity);
                 }
 
                 _pendingLeaveEntities.Clear();
@@ -197,6 +294,11 @@ namespace YuoCore.Ecs
         internal virtual void Clear()
         {
             Entities.Clear();
+            Array.Clear(_denseEntities, 0, _denseCount);
+            _denseCount = 0;
+            _denseHoles = 0;
+            _denseLive = 0;
+            _densePositions?.Clear();
             systemTags.Clear();
             influenceTypes.Clear();
             _requiredComponentIds = null;
@@ -253,7 +355,7 @@ namespace YuoCore.Ecs
             }
             else
             {
-                Entities.Add(entity);
+                AddEntity(entity);
             }
 
             return true;
@@ -272,7 +374,7 @@ namespace YuoCore.Ecs
                 return;
             }
 
-            Entities.Remove(entity);
+            RemoveEntity(entity);
         }
 
         internal bool m_Run(YuoEntity entity)
