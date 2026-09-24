@@ -8805,3 +8805,36 @@ local-composite-count:     123.905ms -> 144.780ms，+16.848%；allocated -0.102%
 当前 quick 样本只有 5 tick，短样本抖动较大；下一步应跑多轮或 soak 后再决定是否继续优化。
 已知剩余热点仍是 AOI coordinator drain、first-session frame publish 和 actor enqueue。
 ```
+
+## ECS 内核七阶段优化（ecs-optimized 分支）
+
+基线 `452b3a1`，仅改 `vendor/YuoCore-optimized` 内部实现，公开 API 完全兼容
+（`YuoCore.Ecs` 381 项、`YuoCore.Runtime` 44 项公开/保护签名经反射对比 0 增删）。
+
+### 各阶段手法
+
+1. `ComponentTypeRegistry`：`Type→int` 进程内稳定编号，热路径改用 `ComponentTypeId`。
+2. 稀疏组件存储：每组件类型建 `ComponentStore`（sparse `int[]` + dense `int[]`/`YuoComponent[]`），
+   实体持有世界内稠密 `EntityIndex`；`GetComponent` 直达存储，`Components` 字典保留为公开视图。
+3. 实体组件掩码：实体维护组件掩码、基础组件掩码与 baseType→组件槽位；
+   `CheckValidEntity`/`HasComponent`/`HasBaseComponent` 走位运算。
+4. 系统查询计划：`YuoSystem<T..>`/`YuoSystemOfBase<T..>` 在 `Init` 绑定 `ComponentStore`
+   引用与槽位 id，`RunEntity` 直读 dense 槽位。
+5. 稠密系统实体集合：迭代走 `_denseEntities` 数组 + `_entitySlots` 稀疏反查；
+   删除墓碑保序，迭代期间增删仍延迟并入；公开 `Entities`（HashSet）保持成员语义，
+   外部直接改写时按数量偏差自动重建。
+6. 生命周期索引：`componentId → 系统列表` 命中表，与 `systemsOfComponent`/
+   `systemsOfBaseComponent` 共用同一 `List` 实例，注册/排序/移除天然同步。
+7. Fiber 消息：邮箱节点池化（`MailboxItem` 复用承载同步/异步消息）、
+   投递快速路径免 async 状态机与闭包、调用方令牌不可取消时免 linked CTS。
+
+### 基准对比（entities=10000, ticks=20）
+
+```text
+perf-smoke 1 shard : 104.752ms → 24.340ms（avg），p95 137.5→39.7，吞吐 95k→411k entity-tick/s
+perf-smoke 4 shard : ~40.6ms   → 15.835ms（avg），p95 ~64.6→22.4，吞吐 319k→632k entity-tick/s
+ecs-shape  4 shard : 43.990ms  → 14.096ms（avg），p95 76.6→23.5；allocated 340.9→397.7MB（+16.7%）
+```
+
+分配增量为一次性常驻结构（组件存储数组、系统反查表等），`heap-after` 405.5→329.5MB 反而下降；
+后续可考虑按实体量预分配 store 容量进一步削减扩容 churn。

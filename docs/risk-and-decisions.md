@@ -2307,3 +2307,19 @@ dead letter 证据丢失完全不可见——对持久化证据链是隐性单�
 可选注入）输出 Error 日志；循环存活语义不变，只是不再静默。
 测试：既有 ThrowingFailureSink 用例追加 FailureSinkErrorCount 断言。
 ```
+
+### ECS 稠密化优化的兼容取舍（ecs-optimized 分支）
+
+```text
+决定：公开 API 零变更；Components 字典与 Entities HashSet 保留为公开视图，
+内部热路径改走 ComponentStore / 掩码 / 稠密数组。
+取舍：
+- 外部代码若绕过公开 API 直接写 entity.Components 字典，掩码与存储不可见，
+  系统匹配与直达读取会漏判（公开方法路径不受影响，已文档化）。
+- system.Entities 直接 Add/Remove 不经过稠密集合：m_Run 每轮开头按
+  Entities.Count 与存活数偏差自动重建稠密数组兜底，语义保持但失去该轮优化收益。
+- ComponentTypeId 为进程内编号、跨世界共享，不持久化；序列化路径仍走 Type。
+- Fiber mailbox 元素由委托改为池化 MailboxItem，属内部结构；Dispose 后未消费
+  节点自然 GC，不影响 PendingMessageCount 语义。
+测试：全解决方案 27 个测试项目 586 个用例全通过；反射对比公开签名 0 增删。
+```
