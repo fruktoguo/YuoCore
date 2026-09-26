@@ -44,6 +44,8 @@ namespace YuoCore.Ecs
         /// </summary>
         public void RegisterEntity(YuoEntity entity)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.register_entity");
+            YuoCoreTrace.Count("yuocore.world.register_entity.count");
             if (!Entities.TryAdd(entity.EntityData.Id, entity))
                 $"实体ID重复，请检查：ID {entity.EntityData.Id} Entity {entity}".LogError();
         }
@@ -53,6 +55,8 @@ namespace YuoCore.Ecs
         /// </summary>
         public void UnRegisterEntity(YuoEntity entity)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.unregister_entity");
+            YuoCoreTrace.Count("yuocore.world.unregister_entity.count");
             if (Entities.Remove(entity.EntityData.Id))
             {
                 // 实体真正移出世界时才回收稠密索引并清理稀疏存储残留槽位
@@ -65,6 +69,8 @@ namespace YuoCore.Ecs
         /// </summary>
         public void RemoveComponent(YuoEntity entity, YuoComponent component)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.remove_component");
+            YuoCoreTrace.Count("yuocore.world.remove_component.count");
             components.RemoveItem(component.Type, component);
             // 世界销毁即游戏退出时，不调用 Destroy，只调用 ExitGame
             if (IsPlaying)
@@ -107,6 +113,8 @@ namespace YuoCore.Ecs
         /// </summary>
         public void AddComponent(YuoEntity entity, YuoComponent component, Type componentType)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.add_component");
+            YuoCoreTrace.Count("yuocore.world.add_component.count");
             if (!components.TryGetValue(componentType, out var componentSet))
             {
                 componentSet = new();

@@ -32,6 +32,8 @@ namespace YuoCore.Ecs
 
         public YuoEntity(YuoWorld world, long id)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.entity.constructor");
+            YuoCoreTrace.Count("yuocore.entity.constructor");
             World = world ?? throw new ArgumentNullException(nameof(world));
             // 世界内稠密实体索引：稀疏组件存储的寻址键，实体销毁后回收复用
             EntityIndex = world.AllocateEntityIndex();

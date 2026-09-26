@@ -25,6 +25,8 @@ public sealed class YuoFiberManager : IAsyncDisposable, IDisposable
 
     public YuoFiber CreateFiber(YuoFiberOptions options, YuoWorld? world = null)
     {
+        using var measurement = YuoCoreTrace.Measure("yuocore.fiber_manager.create");
+        YuoCoreTrace.Count("yuocore.fiber_manager.create");
         return CreateFiber(options, world, reserveId: true);
     }
 
@@ -59,6 +61,8 @@ public sealed class YuoFiberManager : IAsyncDisposable, IDisposable
 
     public async ValueTask TickAllAsync(CancellationToken cancellationToken = default)
     {
+        using var measurement = YuoCoreTrace.Measure("yuocore.fiber_manager.tick_all");
+        YuoCoreTrace.Count("yuocore.fiber_manager.tick_all");
         ThrowIfDisposed();
 
         foreach (var fiber in _fibers.Values)
@@ -69,8 +73,11 @@ public sealed class YuoFiberManager : IAsyncDisposable, IDisposable
 
     public async ValueTask TickAllParallelAsync(int maxConcurrency = 0, CancellationToken cancellationToken = default)
     {
+        using var measurement = YuoCoreTrace.Measure("yuocore.fiber_manager.tick_all_parallel");
+        YuoCoreTrace.Count("yuocore.fiber_manager.tick_all_parallel");
         ThrowIfDisposed();
         var fibers = _fibers.Values.ToArray();
+        YuoCoreTrace.Count("yuocore.fiber_manager.fiber_snapshot", fibers.Length);
         if (fibers.Length == 0) return;
 
         var concurrency = maxConcurrency <= 0

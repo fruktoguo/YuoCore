@@ -92,6 +92,8 @@ namespace YuoCore.Ecs
         internal bool CheckCoverSystem(YuoEntity entity)
         {
             if (!hasCoverSystem) return false;
+            using var measurement = YuoCoreTrace.Measure(TraceCoverStage);
+            YuoCoreTrace.Count("yuocore.system.cover_check.count");
             if (World is { } world && world.coverSystemDic.TryGetValue(RunType, out var cover))
             {
                 foreach (var component in cover.componentTypes)
@@ -117,8 +119,11 @@ namespace YuoCore.Ecs
         internal void m_Run()
         {
             if (!Enabled) return;
+            YuoCoreTrace.Count("yuocore.system.run.count");
+            using var runMeasurement = YuoCoreTrace.Measure(TraceRunStage);
             if (Entities.Count == 0)
             {
+                YuoCoreTrace.Count("yuocore.system.empty_run");
                 return;
             }
 
@@ -139,6 +144,7 @@ namespace YuoCore.Ecs
             _isIteratingEntities = true;
             try
             {
+                using var iterationMeasurement = YuoCoreTrace.Measure("yuocore.system.entity_iteration");
                 var dense = _denseEntities;
                 var count = _denseCount;
                 if (YuoWorld.CloseSystemTry)
@@ -146,7 +152,18 @@ namespace YuoCore.Ecs
                     for (var i = 0; i < count; i++)
                     {
                         var entity = dense[i];
-                        if (entity == null || CheckCoverSystem(entity)) continue;
+                        YuoCoreTrace.Count("yuocore.system.entity_scan");
+                        if (entity == null)
+                        {
+                            continue;
+                        }
+                        if (CheckCoverSystem(entity))
+                        {
+                            YuoCoreTrace.Count("yuocore.system.cover_skip");
+                            continue;
+                        }
+                        YuoCoreTrace.Count("yuocore.system.entity_run.count");
+                        using var entityMeasurement = YuoCoreTrace.Measure(TraceEntityStage);
                         RunEntity(entity);
                     }
                 }
@@ -155,9 +172,20 @@ namespace YuoCore.Ecs
                     for (var i = 0; i < count; i++)
                     {
                         var entity = dense[i];
-                        if (entity == null || CheckCoverSystem(entity)) continue;
+                        YuoCoreTrace.Count("yuocore.system.entity_scan");
+                        if (entity == null)
+                        {
+                            continue;
+                        }
+                        if (CheckCoverSystem(entity))
+                        {
+                            YuoCoreTrace.Count("yuocore.system.cover_skip");
+                            continue;
+                        }
                         try
                         {
+                            YuoCoreTrace.Count("yuocore.system.entity_run.count");
+                            using var entityMeasurement = YuoCoreTrace.Measure(TraceEntityStage);
                             RunEntity(entity);
                         }
                         catch (Exception e)
@@ -170,7 +198,8 @@ namespace YuoCore.Ecs
             finally
             {
                 _isIteratingEntities = false;
-                ApplyPendingEntityChanges();
+                using (YuoCoreTrace.Measure(TracePendingStage))
+                    ApplyPendingEntityChanges();
             }
 
 #if UNITY_EDITOR
@@ -181,6 +210,15 @@ namespace YuoCore.Ecs
         private bool _isIteratingEntities;
         private HashSet<YuoEntity> _pendingJoinEntities;
         private HashSet<YuoEntity> _pendingLeaveEntities;
+        private string _traceRunStage;
+        private string _traceEntityStage;
+        private string _traceCoverStage;
+        private string _tracePendingStage;
+
+        private string TraceRunStage => _traceRunStage ??= $"yuocore.system.run.{SystemName}";
+        private string TraceEntityStage => _traceEntityStage ??= $"yuocore.system.entity_run.{SystemName}";
+        private string TraceCoverStage => _traceCoverStage ??= $"yuocore.system.cover_check.{SystemName}";
+        private string TracePendingStage => _tracePendingStage ??= $"yuocore.system.pending_apply.{SystemName}";
 
         // 稠密实体集合：公开的 Entities(HashSet) 仅作成员视图供 Contains/枚举兼容，
         // 实际迭代走 _denseEntities 连续数组，缓存友好且无迭代器节点开销。
@@ -235,6 +273,8 @@ namespace YuoCore.Ecs
 
         private void CompactDenseEntities()
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.system.compact_entities");
+            YuoCoreTrace.Count("yuocore.system.compact_entities");
             if (_denseLive != Entities.Count)
             {
                 // 与公开集合出现偏差（外部直接改写 Entities）：以 HashSet 为准重建。
@@ -354,6 +394,8 @@ namespace YuoCore.Ecs
 
         internal virtual bool MatchesRequiredComponents(YuoEntity entity)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.system.match_components");
+            YuoCoreTrace.Count("yuocore.system.match_components");
             var required = RequiredComponentIds;
             for (var i = 0; i < required.Length; i++)
             {
@@ -365,6 +407,8 @@ namespace YuoCore.Ecs
 
         internal virtual bool CheckValidEntity(YuoEntity entity)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.system.check_valid_entity");
+            YuoCoreTrace.Count("yuocore.system.check_valid_entity");
             if (!MatchesRequiredComponents(entity)) return false;
 
             if (_isIteratingEntities)
@@ -399,8 +443,18 @@ namespace YuoCore.Ecs
         internal bool m_Run(YuoEntity entity)
         {
             if (!Enabled) return false;
-            if (!Entities.Contains(entity)) return false;
-            if (CheckCoverSystem(entity)) return false;
+            if (!Entities.Contains(entity))
+            {
+                YuoCoreTrace.Count("yuocore.system.single_skip.not_member");
+                return false;
+            }
+            if (CheckCoverSystem(entity))
+            {
+                YuoCoreTrace.Count("yuocore.system.cover_skip");
+                return false;
+            }
+            YuoCoreTrace.Count("yuocore.system.single_run.count");
+            using var runMeasurement = YuoCoreTrace.Measure(TraceEntityStage);
 
 #if UNITY_EDITOR
             StartClock();

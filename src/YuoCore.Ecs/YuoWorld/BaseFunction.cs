@@ -48,8 +48,11 @@ namespace YuoCore.Ecs
         /// </summary>
         private void ExecutionCommandBuffer()
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.execution_command_buffer");
+            YuoCoreTrace.Count("yuocore.world.execution_command_buffer.count");
             if (componentDestroyBuffer.HasBuffer)
             {
+                YuoCoreTrace.Count("yuocore.world.on_destroy_component_batch");
                 foreach (var yuoComponent in componentDestroyBuffer.ExecutionBuffer())
                 {
                     // Debug.Log($"Component {yuoComponent} 开始释放");
@@ -59,6 +62,7 @@ namespace YuoCore.Ecs
 
             if (entityDestroyBuffer.HasBuffer)
             {
+                YuoCoreTrace.Count("yuocore.world.on_destroy_entity_batch");
                 foreach (var entity in entityDestroyBuffer.ExecutionBuffer())
                 {
                     // Debug.Log($"Entity {entity} 开始释放");

@@ -38,10 +38,22 @@ namespace YuoCore.Ecs
         /// </summary>
         internal YuoComponent Get(int entityIndex)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.entity.get_component");
+            YuoCoreTrace.Count("yuocore.entity.get_component");
             var sparse = _sparse;
-            if ((uint)entityIndex >= (uint)sparse.Length) return null;
+            if ((uint)entityIndex >= (uint)sparse.Length)
+            {
+                YuoCoreTrace.Count("yuocore.entity.get_component.miss");
+                return null;
+            }
             var pos = sparse[entityIndex];
-            return pos == 0 ? null : _dense[pos - 1];
+            if (pos == 0)
+            {
+                YuoCoreTrace.Count("yuocore.entity.get_component.miss");
+                return null;
+            }
+            YuoCoreTrace.Count("yuocore.entity.get_component.hit");
+            return _dense[pos - 1];
         }
 
         /// <summary>
@@ -49,12 +61,16 @@ namespace YuoCore.Ecs
         /// </summary>
         internal int GetSlot(int entityIndex)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.entity.get_component_slot");
+            YuoCoreTrace.Count("yuocore.entity.get_component_slot");
             var sparse = _sparse;
             return (uint)entityIndex < (uint)sparse.Length ? sparse[entityIndex] : 0;
         }
 
         internal bool Has(int entityIndex)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.entity.has_component");
+            YuoCoreTrace.Count("yuocore.entity.has_component");
             var sparse = _sparse;
             return (uint)entityIndex < (uint)sparse.Length && sparse[entityIndex] != 0;
         }
@@ -64,6 +80,8 @@ namespace YuoCore.Ecs
         /// </summary>
         internal void Set(int entityIndex, YuoComponent component)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.set_component");
+            YuoCoreTrace.Count("yuocore.world.set_component");
             EnsureSparse(entityIndex);
             var pos = _sparse[entityIndex];
             if (pos != 0)
@@ -81,6 +99,8 @@ namespace YuoCore.Ecs
 
         internal void Remove(int entityIndex)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.remove_component");
+            YuoCoreTrace.Count("yuocore.world.remove_component");
             var sparse = _sparse;
             if ((uint)entityIndex >= (uint)sparse.Length) return;
             var pos = sparse[entityIndex];
