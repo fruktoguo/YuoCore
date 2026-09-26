@@ -154,6 +154,8 @@ namespace YuoCore.Ecs
         /// </summary>
         public void SetComponent(YuoComponent component1, YuoComponent component2)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.set_component");
+            YuoCoreTrace.Count("yuocore.world.set_component.count");
             if (components.TryGetValue(component1.Type, out var list))
             {
                 list.Remove(component1);

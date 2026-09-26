@@ -52,7 +52,7 @@ namespace YuoCore.Ecs
             YuoCoreTrace.Count("yuocore.world.execution_command_buffer.count");
             if (componentDestroyBuffer.HasBuffer)
             {
-                YuoCoreTrace.Count("yuocore.world.on_destroy_component_batch");
+                YuoCoreTrace.Count("yuocore.world.destroy_component_batch.count");
                 foreach (var yuoComponent in componentDestroyBuffer.ExecutionBuffer())
                 {
                     // Debug.Log($"Component {yuoComponent} 开始释放");
@@ -62,7 +62,7 @@ namespace YuoCore.Ecs
 
             if (entityDestroyBuffer.HasBuffer)
             {
-                YuoCoreTrace.Count("yuocore.world.on_destroy_entity_batch");
+                YuoCoreTrace.Count("yuocore.world.destroy_entity_batch.count");
                 foreach (var entity in entityDestroyBuffer.ExecutionBuffer())
                 {
                     // Debug.Log($"Entity {entity} 开始释放");

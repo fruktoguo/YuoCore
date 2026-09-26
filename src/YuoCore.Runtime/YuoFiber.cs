@@ -93,7 +93,7 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     public void Start()
     {
         using var measurement = YuoCoreTrace.Measure("yuocore.fiber.start");
-        YuoCoreTrace.Count("yuocore.fiber.start");
+        YuoCoreTrace.Count("yuocore.fiber.start.count");
         ThrowIfDisposed();
         if (_started) return;
 
@@ -106,35 +106,41 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     public ValueTask PostAsync(Action<YuoFiber> action, CancellationToken cancellationToken = default)
     {
         using var measurement = YuoCoreTrace.Measure("yuocore.fiber.post.sync");
-        YuoCoreTrace.Count("yuocore.fiber.post.sync");
         ArgumentNullException.ThrowIfNull(action);
         ThrowIfDisposed();
+        YuoCoreTrace.Count("yuocore.fiber.post.sync.count");
+        YuoCoreTrace.Count("yuocore.fiber.enqueue.count");
         // 池化节点直接承载同步委托，不再为每条消息分配包装闭包。
         var item = RentItem();
         item.Sync = action;
+        var enqueueMeasurement = YuoCoreTrace.Measure("yuocore.fiber.enqueue");
         // 快速路径：未取消且邮箱未满时同步入队，连 async 状态机都省掉。
         if (!cancellationToken.IsCancellationRequested && TryEnqueue(item))
         {
+            enqueueMeasurement.Dispose();
             return ValueTask.CompletedTask;
         }
 
-        return EnqueueAsync(item, cancellationToken);
+        return EnqueueAsync(item, cancellationToken, enqueueMeasurement);
     }
 
     public ValueTask PostAsync(Func<YuoFiber, CancellationToken, ValueTask> action, CancellationToken cancellationToken = default)
     {
         using var measurement = YuoCoreTrace.Measure("yuocore.fiber.post.async");
-        YuoCoreTrace.Count("yuocore.fiber.post.async");
         ArgumentNullException.ThrowIfNull(action);
         ThrowIfDisposed();
+        YuoCoreTrace.Count("yuocore.fiber.post.async.count");
+        YuoCoreTrace.Count("yuocore.fiber.enqueue.count");
         var item = RentItem();
         item.Async = action;
+        var enqueueMeasurement = YuoCoreTrace.Measure("yuocore.fiber.enqueue");
         if (!cancellationToken.IsCancellationRequested && TryEnqueue(item))
         {
+            enqueueMeasurement.Dispose();
             return ValueTask.CompletedTask;
         }
 
-        return EnqueueAsync(item, cancellationToken);
+        return EnqueueAsync(item, cancellationToken, enqueueMeasurement);
     }
 
     /// <summary>
@@ -142,32 +148,33 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     /// </summary>
     private bool TryEnqueue(MailboxItem item)
     {
-        using var measurement = YuoCoreTrace.Measure("yuocore.fiber.enqueue");
-        YuoCoreTrace.Count("yuocore.fiber.enqueue.count");
+        using var measurement = YuoCoreTrace.Measure("yuocore.fiber.enqueue.try_write");
         // 写入前计数：有界通道下阻塞中的 writer 也属于待处理压力；
         // 且避免 reader 先消费导致计数出现负值。
         Interlocked.Increment(ref _pendingMessages);
         if (_mailbox.Writer.TryWrite(item))
         {
-            YuoCoreTrace.Count("yuocore.fiber.enqueue.success");
+            YuoCoreTrace.Count("yuocore.fiber.enqueue.try_write.success");
             return true;
         }
         Interlocked.Decrement(ref _pendingMessages);
-        YuoCoreTrace.Count("yuocore.fiber.enqueue.fallback");
+        YuoCoreTrace.Count("yuocore.fiber.enqueue.try_write.fallback");
         return false;
     }
 
     private async ValueTask EnqueueAsync(
         MailboxItem item,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        YuoCoreTrace.Measurement enqueueMeasurement)
     {
-        using var measurement = YuoCoreTrace.Measure("yuocore.fiber.enqueue");
-        YuoCoreTrace.Count("yuocore.fiber.enqueue.count");
+        using var measurement = enqueueMeasurement;
         // TryEnqueue 失败时计数已回退，这里重新计入阻塞中的投递。
         Interlocked.Increment(ref _pendingMessages);
         try
         {
-            await _mailbox.Writer.WriteAsync(item, cancellationToken).ConfigureAwait(false);
+            using (YuoCoreTrace.Measure("yuocore.fiber.enqueue.write"))
+                await _mailbox.Writer.WriteAsync(item, cancellationToken).ConfigureAwait(false);
+            YuoCoreTrace.Count("yuocore.fiber.enqueue.write.success");
         }
         catch
         {
@@ -180,7 +187,7 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     public ValueTask<T> CallAsync<T>(Func<YuoFiber, CancellationToken, ValueTask<T>> action, CancellationToken cancellationToken = default)
     {
         using var measurement = YuoCoreTrace.Measure("yuocore.fiber.call");
-        YuoCoreTrace.Count("yuocore.fiber.call");
+        YuoCoreTrace.Count("yuocore.fiber.call.count");
         ArgumentNullException.ThrowIfNull(action);
         ThrowIfDisposed();
         // 同 Fiber 内等待本 Fiber mailbox 必然死锁（drain 被本动作占住），快速失败。
@@ -196,6 +203,7 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     private async ValueTask<T> CallAsyncCore<T>(Func<YuoFiber, CancellationToken, ValueTask<T>> action, CancellationToken cancellationToken)
     {
         using var measurement = YuoCoreTrace.Measure("yuocore.fiber.call_core");
+        YuoCoreTrace.Count("yuocore.fiber.enqueue.count");
         // CallAsync 是跨 Fiber 同步请求的基础：调用方等待 TaskCompletionSource，
         // 真正的业务代码仍然排进目标 Fiber mailbox，由目标 Fiber 串行执行。
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -222,9 +230,14 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
             }
         };
 
+        var enqueueMeasurement = YuoCoreTrace.Measure("yuocore.fiber.enqueue");
         if (cancellationToken.IsCancellationRequested || !TryEnqueue(item))
         {
-            await EnqueueAsync(item, cancellationToken).ConfigureAwait(false);
+            await EnqueueAsync(item, cancellationToken, enqueueMeasurement).ConfigureAwait(false);
+        }
+        else
+        {
+            enqueueMeasurement.Dispose();
         }
 
         return await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -233,7 +246,7 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     public async ValueTask TickAsync(CancellationToken cancellationToken = default)
     {
         using var measurement = YuoCoreTrace.Measure("yuocore.fiber.tick");
-        YuoCoreTrace.Count("yuocore.fiber.tick");
+        YuoCoreTrace.Count("yuocore.fiber.tick.count");
         ThrowIfDisposed();
         EnsureStarted();
 
@@ -262,7 +275,7 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     public async ValueTask FixedTickAsync(CancellationToken cancellationToken = default)
     {
         using var measurement = YuoCoreTrace.Measure("yuocore.fiber.fixed_tick");
-        YuoCoreTrace.Count("yuocore.fiber.fixed_tick");
+        YuoCoreTrace.Count("yuocore.fiber.fixed_tick.count");
         ThrowIfDisposed();
         EnsureStarted();
 
@@ -288,7 +301,7 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     public void LateTick()
     {
         using var measurement = YuoCoreTrace.Measure("yuocore.fiber.late_tick");
-        YuoCoreTrace.Count("yuocore.fiber.late_tick");
+        YuoCoreTrace.Count("yuocore.fiber.late_tick.count");
         ThrowIfDisposed();
         EnsureStarted();
 
@@ -296,7 +309,8 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
         s_current.Value = this;
         try
         {
-            World.LateUpdate();
+            using (YuoCoreTrace.Measure("yuocore.fiber.world_late_update"))
+                World.LateUpdate();
         }
         finally
         {
@@ -307,7 +321,7 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     public async ValueTask DrainMailboxAsync(CancellationToken cancellationToken = default)
     {
         using var measurement = YuoCoreTrace.Measure("yuocore.fiber.mailbox_drain");
-        YuoCoreTrace.Count("yuocore.fiber.mailbox_drain");
+        YuoCoreTrace.Count("yuocore.fiber.mailbox_drain.count");
         ThrowIfDisposed();
 
         var maxMessages = Math.Max(1, Options.MaxMailboxMessagesPerTick);
@@ -329,12 +343,12 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
                 using var itemMeasurement = YuoCoreTrace.Measure("yuocore.fiber.mailbox_action");
                 if (item.Sync is { } sync)
                 {
-                    YuoCoreTrace.Count("yuocore.fiber.mailbox_action.sync");
+                    YuoCoreTrace.Count("yuocore.fiber.mailbox_action.sync.count");
                     sync(this);
                 }
                 else
                 {
-                    YuoCoreTrace.Count("yuocore.fiber.mailbox_action.async");
+                    YuoCoreTrace.Count("yuocore.fiber.mailbox_action.async.count");
                     // 同步完成的 ValueTask 不产生额外挂起；真正异步的消息才进入状态机。
                     var task = item.Async!(this, cancellationToken);
                     if (!task.IsCompletedSuccessfully)

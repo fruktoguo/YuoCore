@@ -21,7 +21,7 @@ namespace YuoCore.Ecs
             {
                 foreach (var system in systems)
                 {
-                    YuoCoreTrace.Count("yuocore.world.dispatch.count");
+                    YuoCoreTrace.Count("yuocore.world.dispatch.single_entity.system_call.count");
                     system.RunType = tagType;
                     system.m_Run(entity);
                 }
@@ -42,8 +42,9 @@ namespace YuoCore.Ecs
                     system.RunType = type;
                     foreach (var entity in entities)
                     {
-                        YuoCoreTrace.Count("yuocore.world.dispatch.entity");
+                        YuoCoreTrace.Count("yuocore.world.dispatch.entity_attempt.count");
                         if (entity.IsDisposed) continue;
+                        YuoCoreTrace.Count("yuocore.world.dispatch.entity_run.count");
                         system.m_Run(entity);
                     }
                 }
@@ -92,6 +93,8 @@ namespace YuoCore.Ecs
         /// </summary>
         private void RunSystemOfTag(Type tagType, YuoComponent component)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.dispatch.component");
+            YuoCoreTrace.Count("yuocore.world.dispatch.component.count");
             if (component.IsUnusable()) return;
             var componentId = ComponentTypeRegistry.GetId(component.Type);
             var systems = componentId >= 0 ? GetSystemsByComponentId(componentId) : null;
@@ -297,12 +300,12 @@ namespace YuoCore.Ecs
             // 执行系统
             if (systems != null)
             {
+                YuoCoreTrace.Count("yuocore.world.dispatch.system_list", systems.Count);
                 foreach (var system in systems)
                 {
                     system.RunType = tagType;
                     system.m_Run();
                 }
-                YuoCoreTrace.Count("yuocore.world.dispatch.system_list", systems.Count);
             }
         }
 

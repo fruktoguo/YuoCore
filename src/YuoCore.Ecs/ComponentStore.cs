@@ -38,21 +38,21 @@ namespace YuoCore.Ecs
         /// </summary>
         internal YuoComponent Get(int entityIndex)
         {
-            using var measurement = YuoCoreTrace.Measure("yuocore.entity.get_component");
-            YuoCoreTrace.Count("yuocore.entity.get_component");
+            using var measurement = YuoCoreTrace.Measure("yuocore.store.get");
+            YuoCoreTrace.Count("yuocore.store.get.count");
             var sparse = _sparse;
             if ((uint)entityIndex >= (uint)sparse.Length)
             {
-                YuoCoreTrace.Count("yuocore.entity.get_component.miss");
+                YuoCoreTrace.Count("yuocore.store.get.miss");
                 return null;
             }
             var pos = sparse[entityIndex];
             if (pos == 0)
             {
-                YuoCoreTrace.Count("yuocore.entity.get_component.miss");
+                YuoCoreTrace.Count("yuocore.store.get.miss");
                 return null;
             }
-            YuoCoreTrace.Count("yuocore.entity.get_component.hit");
+            YuoCoreTrace.Count("yuocore.store.get.hit");
             return _dense[pos - 1];
         }
 
@@ -61,16 +61,16 @@ namespace YuoCore.Ecs
         /// </summary>
         internal int GetSlot(int entityIndex)
         {
-            using var measurement = YuoCoreTrace.Measure("yuocore.entity.get_component_slot");
-            YuoCoreTrace.Count("yuocore.entity.get_component_slot");
+            using var measurement = YuoCoreTrace.Measure("yuocore.store.get_slot");
+            YuoCoreTrace.Count("yuocore.store.get_slot.count");
             var sparse = _sparse;
             return (uint)entityIndex < (uint)sparse.Length ? sparse[entityIndex] : 0;
         }
 
         internal bool Has(int entityIndex)
         {
-            using var measurement = YuoCoreTrace.Measure("yuocore.entity.has_component");
-            YuoCoreTrace.Count("yuocore.entity.has_component");
+            using var measurement = YuoCoreTrace.Measure("yuocore.store.has");
+            YuoCoreTrace.Count("yuocore.store.has.count");
             var sparse = _sparse;
             return (uint)entityIndex < (uint)sparse.Length && sparse[entityIndex] != 0;
         }
@@ -80,13 +80,14 @@ namespace YuoCore.Ecs
         /// </summary>
         internal void Set(int entityIndex, YuoComponent component)
         {
-            using var measurement = YuoCoreTrace.Measure("yuocore.world.set_component");
-            YuoCoreTrace.Count("yuocore.world.set_component");
+            using var measurement = YuoCoreTrace.Measure("yuocore.store.set");
+            YuoCoreTrace.Count("yuocore.store.set.count");
             EnsureSparse(entityIndex);
             var pos = _sparse[entityIndex];
             if (pos != 0)
             {
                 _dense[pos - 1] = component;
+                YuoCoreTrace.Count("yuocore.store.set.replaced");
                 return;
             }
 
@@ -95,12 +96,13 @@ namespace YuoCore.Ecs
             _dense[pos] = component;
             _denseEntities[pos] = entityIndex;
             _sparse[entityIndex] = pos + 1;
+            YuoCoreTrace.Count("yuocore.store.set.inserted");
         }
 
         internal void Remove(int entityIndex)
         {
-            using var measurement = YuoCoreTrace.Measure("yuocore.world.remove_component");
-            YuoCoreTrace.Count("yuocore.world.remove_component");
+            using var measurement = YuoCoreTrace.Measure("yuocore.store.remove");
+            YuoCoreTrace.Count("yuocore.store.remove.count");
             var sparse = _sparse;
             if ((uint)entityIndex >= (uint)sparse.Length) return;
             var pos = sparse[entityIndex];
@@ -120,6 +122,7 @@ namespace YuoCore.Ecs
             _dense[last] = null;
             _denseEntities[last] = 0;
             sparse[entityIndex] = 0;
+            YuoCoreTrace.Count("yuocore.store.remove.success");
         }
 
         private void EnsureSparse(int entityIndex)

@@ -24,7 +24,7 @@ namespace YuoCore.Ecs
         internal int AllocateEntityIndex()
         {
             using var measurement = YuoCoreTrace.Measure("yuocore.world.allocate_entity_index");
-            YuoCoreTrace.Count("yuocore.world.allocate_entity_index");
+            YuoCoreTrace.Count("yuocore.world.allocate_entity_index.count");
             if (_freeEntityIndices.Count > 0)
             {
                 var index = _freeEntityIndices.Pop();
@@ -41,7 +41,7 @@ namespace YuoCore.Ecs
         internal void ReleaseEntityIndex(int entityIndex)
         {
             using var measurement = YuoCoreTrace.Measure("yuocore.world.release_entity_index");
-            YuoCoreTrace.Count("yuocore.world.release_entity_index");
+            YuoCoreTrace.Count("yuocore.world.release_entity_index.count");
             if (entityIndex < 0) return;
             SweepEntityStores(entityIndex);
             _freeEntityIndices.Push(entityIndex);
@@ -50,7 +50,7 @@ namespace YuoCore.Ecs
         private void SweepEntityStores(int entityIndex)
         {
             using var measurement = YuoCoreTrace.Measure("yuocore.world.sweep_entity");
-            YuoCoreTrace.Count("yuocore.world.sweep_entity");
+            YuoCoreTrace.Count("yuocore.world.sweep_entity.count");
             var stores = _componentStores;
             for (var i = 0; i < stores.Length; i++)
             {

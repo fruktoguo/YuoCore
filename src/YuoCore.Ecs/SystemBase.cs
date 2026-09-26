@@ -93,7 +93,6 @@ namespace YuoCore.Ecs
         {
             if (!hasCoverSystem) return false;
             using var measurement = YuoCoreTrace.Measure(TraceCoverStage);
-            YuoCoreTrace.Count("yuocore.system.cover_check.count");
             if (World is { } world && world.coverSystemDic.TryGetValue(RunType, out var cover))
             {
                 foreach (var component in cover.componentTypes)
@@ -142,6 +141,11 @@ namespace YuoCore.Ecs
             }
 
             _isIteratingEntities = true;
+            long scanned = 0;
+            long nullSkipped = 0;
+            long coverChecked = 0;
+            long coverSkipped = 0;
+            long entityRuns = 0;
             try
             {
                 using var iterationMeasurement = YuoCoreTrace.Measure("yuocore.system.entity_iteration");
@@ -152,17 +156,19 @@ namespace YuoCore.Ecs
                     for (var i = 0; i < count; i++)
                     {
                         var entity = dense[i];
-                        YuoCoreTrace.Count("yuocore.system.entity_scan");
+                        scanned++;
                         if (entity == null)
                         {
+                            nullSkipped++;
                             continue;
                         }
+                        if (hasCoverSystem) coverChecked++;
                         if (CheckCoverSystem(entity))
                         {
-                            YuoCoreTrace.Count("yuocore.system.cover_skip");
+                            coverSkipped++;
                             continue;
                         }
-                        YuoCoreTrace.Count("yuocore.system.entity_run.count");
+                        entityRuns++;
                         using var entityMeasurement = YuoCoreTrace.Measure(TraceEntityStage);
                         RunEntity(entity);
                     }
@@ -172,19 +178,21 @@ namespace YuoCore.Ecs
                     for (var i = 0; i < count; i++)
                     {
                         var entity = dense[i];
-                        YuoCoreTrace.Count("yuocore.system.entity_scan");
+                        scanned++;
                         if (entity == null)
                         {
+                            nullSkipped++;
                             continue;
                         }
+                        if (hasCoverSystem) coverChecked++;
                         if (CheckCoverSystem(entity))
                         {
-                            YuoCoreTrace.Count("yuocore.system.cover_skip");
+                            coverSkipped++;
                             continue;
                         }
                         try
                         {
-                            YuoCoreTrace.Count("yuocore.system.entity_run.count");
+                            entityRuns++;
                             using var entityMeasurement = YuoCoreTrace.Measure(TraceEntityStage);
                             RunEntity(entity);
                         }
@@ -198,6 +206,19 @@ namespace YuoCore.Ecs
             finally
             {
                 _isIteratingEntities = false;
+                // 循环只做本地累计，避免每个实体都进入宿主 Meter 监听器。
+                YuoCoreTrace.Count("yuocore.system.entity_scan", scanned);
+                YuoCoreTrace.Count(TraceScanCount, scanned);
+                if (nullSkipped > 0)
+                {
+                    YuoCoreTrace.Count("yuocore.system.null_skip", nullSkipped);
+                    YuoCoreTrace.Count(TraceNullSkipCount, nullSkipped);
+                }
+                if (coverChecked > 0) YuoCoreTrace.Count("yuocore.system.cover_check.count", coverChecked);
+                YuoCoreTrace.Count("yuocore.system.cover_skip", coverSkipped);
+                YuoCoreTrace.Count(TraceCoverSkipCount, coverSkipped);
+                YuoCoreTrace.Count("yuocore.system.entity_run.count", entityRuns);
+                YuoCoreTrace.Count(TraceEntityRunCount, entityRuns);
                 using (YuoCoreTrace.Measure(TracePendingStage))
                     ApplyPendingEntityChanges();
             }
@@ -214,11 +235,19 @@ namespace YuoCore.Ecs
         private string _traceEntityStage;
         private string _traceCoverStage;
         private string _tracePendingStage;
+        private string _traceScanCount;
+        private string _traceNullSkipCount;
+        private string _traceCoverSkipCount;
+        private string _traceEntityRunCount;
 
         private string TraceRunStage => _traceRunStage ??= $"yuocore.system.run.{SystemName}";
         private string TraceEntityStage => _traceEntityStage ??= $"yuocore.system.entity_run.{SystemName}";
         private string TraceCoverStage => _traceCoverStage ??= $"yuocore.system.cover_check.{SystemName}";
         private string TracePendingStage => _tracePendingStage ??= $"yuocore.system.pending_apply.{SystemName}";
+        private string TraceScanCount => _traceScanCount ??= $"yuocore.system.entity_scan.{SystemName}";
+        private string TraceNullSkipCount => _traceNullSkipCount ??= $"yuocore.system.null_skip.{SystemName}";
+        private string TraceCoverSkipCount => _traceCoverSkipCount ??= $"yuocore.system.cover_skip.{SystemName}";
+        private string TraceEntityRunCount => _traceEntityRunCount ??= $"yuocore.system.entity_run.{SystemName}.count";
 
         // 稠密实体集合：公开的 Entities(HashSet) 仅作成员视图供 Contains/枚举兼容，
         // 实际迭代走 _denseEntities 连续数组，缓存友好且无迭代器节点开销。
@@ -274,7 +303,7 @@ namespace YuoCore.Ecs
         private void CompactDenseEntities()
         {
             using var measurement = YuoCoreTrace.Measure("yuocore.system.compact_entities");
-            YuoCoreTrace.Count("yuocore.system.compact_entities");
+            YuoCoreTrace.Count("yuocore.system.compact_entities.count");
             if (_denseLive != Entities.Count)
             {
                 // 与公开集合出现偏差（外部直接改写 Entities）：以 HashSet 为准重建。
@@ -395,7 +424,7 @@ namespace YuoCore.Ecs
         internal virtual bool MatchesRequiredComponents(YuoEntity entity)
         {
             using var measurement = YuoCoreTrace.Measure("yuocore.system.match_components");
-            YuoCoreTrace.Count("yuocore.system.match_components");
+            YuoCoreTrace.Count("yuocore.system.match_components.count");
             var required = RequiredComponentIds;
             for (var i = 0; i < required.Length; i++)
             {
@@ -408,7 +437,7 @@ namespace YuoCore.Ecs
         internal virtual bool CheckValidEntity(YuoEntity entity)
         {
             using var measurement = YuoCoreTrace.Measure("yuocore.system.check_valid_entity");
-            YuoCoreTrace.Count("yuocore.system.check_valid_entity");
+            YuoCoreTrace.Count("yuocore.system.check_valid_entity.count");
             if (!MatchesRequiredComponents(entity)) return false;
 
             if (_isIteratingEntities)
@@ -448,6 +477,7 @@ namespace YuoCore.Ecs
                 YuoCoreTrace.Count("yuocore.system.single_skip.not_member");
                 return false;
             }
+            if (hasCoverSystem) YuoCoreTrace.Count("yuocore.system.cover_check.count");
             if (CheckCoverSystem(entity))
             {
                 YuoCoreTrace.Count("yuocore.system.cover_skip");
