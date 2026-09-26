@@ -93,7 +93,6 @@ namespace YuoCore.Ecs
         {
             if (!hasCoverSystem) return false;
             using var measurement = YuoCoreTrace.Measure(TraceCoverStage);
-            YuoCoreTrace.Count("yuocore.system.cover_check.count");
             if (World is { } world && world.coverSystemDic.TryGetValue(RunType, out var cover))
             {
                 foreach (var component in cover.componentTypes)
@@ -138,6 +137,7 @@ namespace YuoCore.Ecs
             long scanned = 0;
             long covered = 0;
             long executed = 0;
+            long coverChecked = 0;
             try
             {
                 if (YuoWorld.CloseSystemTry)
@@ -145,6 +145,7 @@ namespace YuoCore.Ecs
                     foreach (var entity in Entities)
                     {
                         scanned++;
+                        if (hasCoverSystem) coverChecked++;
                         if (CheckCoverSystem(entity))
                         {
                             covered++;
@@ -160,6 +161,7 @@ namespace YuoCore.Ecs
                     foreach (var entity in Entities)
                     {
                         scanned++;
+                        if (hasCoverSystem) coverChecked++;
                         if (CheckCoverSystem(entity))
                         {
                             covered++;
@@ -183,6 +185,7 @@ namespace YuoCore.Ecs
                 _isIteratingEntities = false;
                 YuoCoreTrace.Count("yuocore.system.entity_scan", scanned);
                 YuoCoreTrace.Count(TraceEntityScanCounter, scanned);
+                if (coverChecked > 0) YuoCoreTrace.Count("yuocore.system.cover_check.count", coverChecked);
                 YuoCoreTrace.Count("yuocore.system.cover_skip", covered);
                 YuoCoreTrace.Count(TraceCoverSkipCounter, covered);
                 YuoCoreTrace.Count("yuocore.system.entity_run.count", executed);
@@ -287,6 +290,7 @@ namespace YuoCore.Ecs
         {
             if (!Enabled) return false;
             if (!Entities.Contains(entity)) return false;
+            if (hasCoverSystem) YuoCoreTrace.Count("yuocore.system.cover_check.count");
             if (CheckCoverSystem(entity)) return false;
 
             YuoCoreTrace.Count("yuocore.system.single_run.count");
