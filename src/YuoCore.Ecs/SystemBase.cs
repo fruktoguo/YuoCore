@@ -135,20 +135,23 @@ namespace YuoCore.Ecs
             // 异常按实体隔离：单个实体失败只跳过该实体并保留完整证据，
             // 不再中断本轮剩余实体（与单实体 m_Run 的隔离语义一致）。
             _isIteratingEntities = true;
+            long scanned = 0;
+            long covered = 0;
+            long executed = 0;
             try
             {
                 if (YuoWorld.CloseSystemTry)
                 {
                     foreach (var entity in Entities)
                     {
-                        YuoCoreTrace.Count("yuocore.system.entity_scan");
+                        scanned++;
                         if (CheckCoverSystem(entity))
                         {
-                            YuoCoreTrace.Count("yuocore.system.cover_skip");
+                            covered++;
                             continue;
                         }
                         using var entityMeasurement = YuoCoreTrace.Measure(TraceEntityStage);
-                        YuoCoreTrace.Count("yuocore.system.entity_run.count");
+                        executed++;
                         RunEntity(entity);
                     }
                 }
@@ -156,16 +159,16 @@ namespace YuoCore.Ecs
                 {
                     foreach (var entity in Entities)
                     {
-                        YuoCoreTrace.Count("yuocore.system.entity_scan");
+                        scanned++;
                         if (CheckCoverSystem(entity))
                         {
-                            YuoCoreTrace.Count("yuocore.system.cover_skip");
+                            covered++;
                             continue;
                         }
                         try
                         {
                             using var entityMeasurement = YuoCoreTrace.Measure(TraceEntityStage);
-                            YuoCoreTrace.Count("yuocore.system.entity_run.count");
+                            executed++;
                             RunEntity(entity);
                         }
                         catch (Exception e)
@@ -178,6 +181,12 @@ namespace YuoCore.Ecs
             finally
             {
                 _isIteratingEntities = false;
+                YuoCoreTrace.Count("yuocore.system.entity_scan", scanned);
+                YuoCoreTrace.Count(TraceEntityScanCounter, scanned);
+                YuoCoreTrace.Count("yuocore.system.cover_skip", covered);
+                YuoCoreTrace.Count(TraceCoverSkipCounter, covered);
+                YuoCoreTrace.Count("yuocore.system.entity_run.count", executed);
+                YuoCoreTrace.Count(TraceEntityRunCounter, executed);
                 using (YuoCoreTrace.Measure(TracePendingStage))
                     ApplyPendingEntityChanges();
             }
@@ -194,11 +203,17 @@ namespace YuoCore.Ecs
         private string _traceEntityStage;
         private string _traceCoverStage;
         private string _tracePendingStage;
+        private string _traceEntityScanCounter;
+        private string _traceCoverSkipCounter;
+        private string _traceEntityRunCounter;
 
         private string TraceRunStage => _traceRunStage ??= $"yuocore.system.run.{SystemName}";
         private string TraceEntityStage => _traceEntityStage ??= $"yuocore.system.entity_run.{SystemName}";
         private string TraceCoverStage => _traceCoverStage ??= $"yuocore.system.cover_check.{SystemName}";
         private string TracePendingStage => _tracePendingStage ??= $"yuocore.system.pending_apply.{SystemName}";
+        private string TraceEntityScanCounter => _traceEntityScanCounter ??= $"yuocore.system.entity_scan.{SystemName}";
+        private string TraceCoverSkipCounter => _traceCoverSkipCounter ??= $"yuocore.system.cover_skip.{SystemName}";
+        private string TraceEntityRunCounter => _traceEntityRunCounter ??= $"yuocore.system.entity_run.{SystemName}.count";
 
         private void ApplyPendingEntityChanges()
         {
