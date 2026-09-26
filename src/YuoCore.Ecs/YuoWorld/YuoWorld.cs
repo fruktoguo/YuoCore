@@ -64,6 +64,28 @@ namespace YuoCore.Ecs
         public Dictionary<long, YuoEntity> Entities { get; private set; } = new();
 
         /// <summary>
+        /// 设置本次 World.Update 要推进的活动实体。System 会按自身成员顺序建立
+        /// 活动数组，避免扫描世界内所有匹配实体。调用方应在 Update 前设置，完成后清除。
+        /// </summary>
+        public void SetActiveEntities(IReadOnlyList<YuoEntity> entities)
+        {
+            if (entities == null) throw new ArgumentNullException(nameof(entities));
+            foreach (var system in allSystem)
+            {
+                system.SetActiveEntities(entities);
+            }
+        }
+
+        /// <summary>清除活动实体选择，恢复完整 System 实体集合遍历。</summary>
+        public void ClearActiveEntities()
+        {
+            foreach (var system in allSystem)
+            {
+                system.ClearActiveEntities();
+            }
+        }
+
+        /// <summary>
         /// 世界时钟，默认共享 TimeInfo.Instance；OnInit 前可注入确定性时钟，
         /// 每次 Update 推进一次 FrameTime
         /// </summary>

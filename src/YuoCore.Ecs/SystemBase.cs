@@ -149,8 +149,12 @@ namespace YuoCore.Ecs
             try
             {
                 using var iterationMeasurement = YuoCoreTrace.Measure("yuocore.system.entity_iteration");
-                var dense = _denseEntities;
-                var count = _denseCount;
+                var dense = _activeSelectionEnabled ? _activeEntities : _denseEntities;
+                var count = _activeSelectionEnabled ? _activeCount : _denseCount;
+                if (count == 0)
+                {
+                    YuoCoreTrace.Count("yuocore.system.empty_run");
+                }
                 if (YuoWorld.CloseSystemTry)
                 {
                     for (var i = 0; i < count; i++)
@@ -259,6 +263,93 @@ namespace YuoCore.Ecs
         private int _denseCount;   // 已用槽位数（含墓碑）
         private int _denseHoles;   // 墓碑数
         private int _denseLive;    // 存活实体数
+
+        // World 在一次批量推进前可设置活动实体集合。该集合按本 System 的加入顺序
+        // 生成独立稠密数组，避免每个 Tick 重新扫描所有匹配实体。
+        private YuoEntity[] _activeEntities = Array.Empty<YuoEntity>();
+        private int[] _activeEntityMarks = Array.Empty<int>();
+        private int _activeGeneration;
+        private int _activeCount;
+        private bool _activeSelectionEnabled;
+
+        internal void SetActiveEntities(IReadOnlyList<YuoEntity> entities)
+        {
+            if (entities == null) throw new ArgumentNullException(nameof(entities));
+            if (_denseHoles > 0 || _denseLive != Entities.Count)
+            {
+                CompactDenseEntities();
+            }
+
+            using var measurement = YuoCoreTrace.Measure("yuocore.system.active_query");
+            YuoCoreTrace.Count("yuocore.system.active_query.count");
+            _activeSelectionEnabled = true;
+            _activeGeneration++;
+            if (_activeGeneration == int.MaxValue)
+            {
+                Array.Clear(_activeEntityMarks, 0, _activeEntityMarks.Length);
+                _activeGeneration = 1;
+            }
+
+            if (_activeEntities.Length < entities.Count)
+            {
+                Array.Resize(ref _activeEntities, entities.Count);
+            }
+
+            var generation = _activeGeneration;
+            var activeCount = 0;
+            for (var i = 0; i < entities.Count; i++)
+            {
+                var entity = entities[i];
+                if (entity == null || entity.IsDisposed) continue;
+                var entityIndex = entity.EntityIndex;
+                if ((uint)entityIndex >= (uint)_entitySlots.Length) continue;
+                var slot = _entitySlots[entityIndex];
+                if (slot == 0 || !ReferenceEquals(_denseEntities[slot - 1], entity)) continue;
+
+                if (_activeEntityMarks.Length <= entityIndex)
+                {
+                    var size = _activeEntityMarks.Length;
+                    while (size <= entityIndex) size = Math.Max(4, size * 2);
+                    Array.Resize(ref _activeEntityMarks, size);
+                }
+
+                // 同一实体在输入中重复出现时仍然只执行一次。
+                if (_activeEntityMarks[entityIndex] == generation) continue;
+                _activeEntityMarks[entityIndex] = generation;
+                _activeEntities[activeCount++] = entity;
+            }
+
+            // 公开 Entities 的迭代顺序是加入顺序；按稠密槽位做稳定插入排序，
+            // 使活动查询不会因调用方传入顺序变化而改变业务结果。
+            for (var i = 1; i < activeCount; i++)
+            {
+                var value = _activeEntities[i];
+                var valueSlot = _entitySlots[value.EntityIndex];
+                var j = i - 1;
+                while (j >= 0 && _entitySlots[_activeEntities[j].EntityIndex] > valueSlot)
+                {
+                    _activeEntities[j + 1] = _activeEntities[j];
+                    j--;
+                }
+
+                _activeEntities[j + 1] = value;
+            }
+
+            if (_activeCount > activeCount)
+            {
+                Array.Clear(_activeEntities, activeCount, _activeCount - activeCount);
+            }
+            _activeCount = activeCount;
+            YuoCoreTrace.Count("yuocore.system.active_entity.count", activeCount);
+        }
+
+        internal void ClearActiveEntities()
+        {
+            if (!_activeSelectionEnabled) return;
+            Array.Clear(_activeEntities, 0, _activeCount);
+            _activeCount = 0;
+            _activeSelectionEnabled = false;
+        }
 
         private void AddEntity(YuoEntity entity)
         {
@@ -387,6 +478,9 @@ namespace YuoCore.Ecs
             _denseCount = 0;
             _denseHoles = 0;
             _denseLive = 0;
+            ClearActiveEntities();
+            Array.Clear(_activeEntityMarks, 0, _activeEntityMarks.Length);
+            _activeGeneration = 0;
             systemTags.Clear();
             influenceTypes.Clear();
             _requiredComponentIds = null;
