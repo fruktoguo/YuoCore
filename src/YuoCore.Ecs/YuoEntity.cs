@@ -27,6 +27,8 @@ namespace YuoCore.Ecs
 
         public YuoEntity(YuoWorld world, long id)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.entity.constructor");
+            YuoCoreTrace.Count("yuocore.entity.constructor.count");
             World = world ?? throw new ArgumentNullException(nameof(world));
             //EntityComponent为基础组件,无法移除,不会显示在组件列表中,但当销毁时会自动移除
             //可以通过获取EntityComponent是否为null来判断Entity是否释放

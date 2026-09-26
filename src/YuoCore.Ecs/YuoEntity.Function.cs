@@ -152,6 +152,8 @@ namespace YuoCore.Ecs
 
         public YuoComponent GetComponent(Type type)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.entity.get_component");
+            YuoCoreTrace.Count("yuocore.entity.get_component.count");
             if (IsDisposed) return null;
             if (Components.TryGetValue(type, out var component))
                 return component;
@@ -168,6 +170,8 @@ namespace YuoCore.Ecs
 
         public YuoComponent GetBaseComponent(Type type)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.entity.get_base_component");
+            YuoCoreTrace.Count("yuocore.entity.get_base_component.count");
             if (IsDisposed) return null;
             return BaseComponents.TryGetValue(type, out var component)
                 ? component.Count > 0 ? component.FirstOrDefault() : null
@@ -286,11 +290,15 @@ namespace YuoCore.Ecs
 
         public bool HasComponent(Type type)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.entity.has_component");
+            YuoCoreTrace.Count("yuocore.entity.has_component.count");
             return Components.ContainsKey(type);
         }
 
         public bool HasBaseComponent(Type type)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.entity.has_base_component");
+            YuoCoreTrace.Count("yuocore.entity.has_base_component.count");
             return BaseComponents.ContainsKey(type);
         }
 
@@ -321,6 +329,8 @@ namespace YuoCore.Ecs
 
         public YuoComponent AddComponent(Type type)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.entity.add_component");
+            YuoCoreTrace.Count("yuocore.entity.add_component.count");
             if (Components.ContainsKey(type)) return GetComponent(type);
             if (Activator.CreateInstance(type) is not YuoComponent component) return null;
             SetComponent(type, component);
@@ -329,6 +339,8 @@ namespace YuoCore.Ecs
 
         public T AddComponent<T>() where T : YuoComponent, new()
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.entity.add_component");
+            YuoCoreTrace.Count("yuocore.entity.add_component.count");
             if (GetComponent<T>() != null) return GetComponent<T>();
             T component = new T();
             SetComponent(typeof(T), component);
@@ -337,6 +349,8 @@ namespace YuoCore.Ecs
 
         public void SetComponent(Type type, YuoComponent component)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.entity.set_component");
+            YuoCoreTrace.Count("yuocore.entity.set_component.count");
             // $"{this} AddComponent:{component.Name}".Log();
             component.Entity = this;
             Components.TryAdd(type, component);
@@ -361,6 +375,8 @@ namespace YuoCore.Ecs
 
         public void RemoveComponent<T>(T component) where T : YuoComponent
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.entity.remove_component");
+            YuoCoreTrace.Count("yuocore.entity.remove_component.count");
             if (component.IsNullOrDisposed()) return;
             if (!Components.ContainsKey(component.Type)) return;
             World.RemoveComponent(this, component);
@@ -483,6 +499,9 @@ namespace YuoCore.Ecs
         public void Dispose()
         {
             if (IsDisposed) return;
+
+            using var measurement = YuoCoreTrace.Measure("yuocore.entity.dispose");
+            YuoCoreTrace.Count("yuocore.entity.dispose.count");
 
             // Debug.Log($"{this} 释放实体 frame{Time.frameCount}");
             foreach (var item in Components.Values.ToList())

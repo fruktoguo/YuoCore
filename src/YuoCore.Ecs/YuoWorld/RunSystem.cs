@@ -14,6 +14,8 @@ namespace YuoCore.Ecs
         /// </summary>
         private void RunSystemOfTag(Type tagType, YuoEntity entity)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.dispatch.single_entity");
+            YuoCoreTrace.Count("yuocore.world.dispatch.single_entity.count");
             if (entity.IsDisposed) return;
             if (GetSystemOfTag(tagType, out var systems))
             {
@@ -87,6 +89,8 @@ namespace YuoCore.Ecs
         /// </summary>
         private void RunSystemOfTag(Type tagType, YuoComponent component)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.dispatch.component");
+            YuoCoreTrace.Count("yuocore.world.dispatch.component.count");
             if (component.IsUnusable()) return;
             if (GetSystemOfComponent(component.Type, out var systems))
             {
@@ -244,6 +248,15 @@ namespace YuoCore.Ecs
         /// </summary>
         private void RunSystemForAllEntity(Type tagType)
         {
+            var stage = tagType == SystemType.Update
+                ? "yuocore.world.dispatch.update"
+                : tagType == SystemType.FixedUpdate
+                    ? "yuocore.world.dispatch.fixed_update"
+                    : tagType == SystemType.LateUpdate
+                        ? "yuocore.world.dispatch.late_update"
+                        : "yuocore.world.dispatch.other";
+            using var measurement = YuoCoreTrace.Measure(stage);
+            YuoCoreTrace.Count("yuocore.world.dispatch.count");
             List<SystemBase> systems = null;
 
             // 高频系统快速路径：使用预缓存的直接引用，避免字典查找
@@ -272,6 +285,7 @@ namespace YuoCore.Ecs
             // 执行系统
             if (systems != null)
             {
+                YuoCoreTrace.Count("yuocore.world.dispatch.system_list", systems.Count);
                 foreach (var system in systems)
                 {
                     system.RunType = tagType;

@@ -92,6 +92,8 @@ namespace YuoCore.Ecs
         internal bool CheckCoverSystem(YuoEntity entity)
         {
             if (!hasCoverSystem) return false;
+            using var measurement = YuoCoreTrace.Measure(TraceCoverStage);
+            YuoCoreTrace.Count("yuocore.system.cover_check.count");
             if (World is { } world && world.coverSystemDic.TryGetValue(RunType, out var cover))
             {
                 foreach (var component in cover.componentTypes)
@@ -117,8 +119,11 @@ namespace YuoCore.Ecs
         internal void m_Run()
         {
             if (!Enabled) return;
+            YuoCoreTrace.Count("yuocore.system.run.count");
+            using var runMeasurement = YuoCoreTrace.Measure(TraceRunStage);
             if (Entities.Count == 0)
             {
+                YuoCoreTrace.Count("yuocore.system.empty_run");
                 return;
             }
 
@@ -136,7 +141,14 @@ namespace YuoCore.Ecs
                 {
                     foreach (var entity in Entities)
                     {
-                        if (CheckCoverSystem(entity)) continue;
+                        YuoCoreTrace.Count("yuocore.system.entity_scan");
+                        if (CheckCoverSystem(entity))
+                        {
+                            YuoCoreTrace.Count("yuocore.system.cover_skip");
+                            continue;
+                        }
+                        using var entityMeasurement = YuoCoreTrace.Measure(TraceEntityStage);
+                        YuoCoreTrace.Count("yuocore.system.entity_run.count");
                         RunEntity(entity);
                     }
                 }
@@ -144,9 +156,16 @@ namespace YuoCore.Ecs
                 {
                     foreach (var entity in Entities)
                     {
-                        if (CheckCoverSystem(entity)) continue;
+                        YuoCoreTrace.Count("yuocore.system.entity_scan");
+                        if (CheckCoverSystem(entity))
+                        {
+                            YuoCoreTrace.Count("yuocore.system.cover_skip");
+                            continue;
+                        }
                         try
                         {
+                            using var entityMeasurement = YuoCoreTrace.Measure(TraceEntityStage);
+                            YuoCoreTrace.Count("yuocore.system.entity_run.count");
                             RunEntity(entity);
                         }
                         catch (Exception e)
@@ -159,7 +178,8 @@ namespace YuoCore.Ecs
             finally
             {
                 _isIteratingEntities = false;
-                ApplyPendingEntityChanges();
+                using (YuoCoreTrace.Measure(TracePendingStage))
+                    ApplyPendingEntityChanges();
             }
 
 #if UNITY_EDITOR
@@ -170,6 +190,15 @@ namespace YuoCore.Ecs
         private bool _isIteratingEntities;
         private HashSet<YuoEntity> _pendingJoinEntities;
         private HashSet<YuoEntity> _pendingLeaveEntities;
+        private string _traceRunStage;
+        private string _traceEntityStage;
+        private string _traceCoverStage;
+        private string _tracePendingStage;
+
+        private string TraceRunStage => _traceRunStage ??= $"yuocore.system.run.{SystemName}";
+        private string TraceEntityStage => _traceEntityStage ??= $"yuocore.system.entity_run.{SystemName}";
+        private string TraceCoverStage => _traceCoverStage ??= $"yuocore.system.cover_check.{SystemName}";
+        private string TracePendingStage => _tracePendingStage ??= $"yuocore.system.pending_apply.{SystemName}";
 
         private void ApplyPendingEntityChanges()
         {
@@ -244,6 +273,9 @@ namespace YuoCore.Ecs
             if (!Enabled) return false;
             if (!Entities.Contains(entity)) return false;
             if (CheckCoverSystem(entity)) return false;
+
+            YuoCoreTrace.Count("yuocore.system.single_run.count");
+            using var runMeasurement = YuoCoreTrace.Measure(TraceEntityStage);
 
 #if UNITY_EDITOR
             StartClock();

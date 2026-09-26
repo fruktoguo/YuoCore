@@ -12,6 +12,8 @@ namespace YuoCore.Ecs
         /// </summary>
         public void OnInit(bool setAsDefault = true)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.on_init");
+            YuoCoreTrace.Count("yuocore.world.on_init.count");
             IsPlaying = true;
             allSystem = new();
             Entities = new();
@@ -45,6 +47,8 @@ namespace YuoCore.Ecs
         /// </summary>
         public void OnDestroy()
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.on_destroy");
+            YuoCoreTrace.Count("yuocore.world.on_destroy.count");
             try
             {
                 // 退出前执行 ExitGame 系统
@@ -85,11 +89,16 @@ namespace YuoCore.Ecs
         /// </summary>
         public void Update()
         {
+            using var updateMeasurement = YuoCoreTrace.Measure("yuocore.world.update");
+            YuoCoreTrace.Count("yuocore.world.update.count");
+            using (YuoCoreTrace.Measure("yuocore.world.time_update"))
             Time.Update();
-            ExecutionCommandBuffer();
+            using (YuoCoreTrace.Measure("yuocore.world.command_buffer"))
+                ExecutionCommandBuffer();
             var processedStartCount = 0;
             try
             {
+                using var startMeasurement = YuoCoreTrace.Measure("yuocore.world.start_systems");
                 for (; processedStartCount < startSystems.Count;)
                 {
                     var component = startSystems[processedStartCount++];
@@ -115,9 +124,11 @@ namespace YuoCore.Ecs
                 }
             }
 
-            ExecutionCommandBuffer();
+            using (YuoCoreTrace.Measure("yuocore.world.command_buffer"))
+                ExecutionCommandBuffer();
 
-            RunSystemForAllEntity(SystemType.Update);
+            using (YuoCoreTrace.Measure("yuocore.world.update_systems"))
+                RunSystemForAllEntity(SystemType.Update);
         }
 
         /// <summary>
@@ -125,16 +136,24 @@ namespace YuoCore.Ecs
         /// </summary>
         public void FixedUpdate()
         {
-            ExecutionCommandBuffer();
-            RunSystemForAllEntity(SystemType.FixedUpdate);
-            ExecutionCommandBuffer();
+            using var updateMeasurement = YuoCoreTrace.Measure("yuocore.world.fixed_update");
+            YuoCoreTrace.Count("yuocore.world.fixed_update.count");
+            using (YuoCoreTrace.Measure("yuocore.world.command_buffer"))
+                ExecutionCommandBuffer();
+            using (YuoCoreTrace.Measure("yuocore.world.fixed_update_systems"))
+                RunSystemForAllEntity(SystemType.FixedUpdate);
+            using (YuoCoreTrace.Measure("yuocore.world.command_buffer"))
+                ExecutionCommandBuffer();
         }
         
         public void OnDrawGizmos()
         {
-            ExecutionCommandBuffer();
+            using var updateMeasurement = YuoCoreTrace.Measure("yuocore.world.gizmos");
+            using (YuoCoreTrace.Measure("yuocore.world.command_buffer"))
+                ExecutionCommandBuffer();
             RunSystemForAllEntity(SystemType.OnDrawGizmos);
-            ExecutionCommandBuffer();
+            using (YuoCoreTrace.Measure("yuocore.world.command_buffer"))
+                ExecutionCommandBuffer();
         }
 
         /// <summary>
@@ -142,9 +161,13 @@ namespace YuoCore.Ecs
         /// </summary>
         public void LateUpdate()
         {
-            ExecutionCommandBuffer();
-            RunSystemForAllEntity(SystemType.LateUpdate);
-            ExecutionCommandBuffer();
+            using var updateMeasurement = YuoCoreTrace.Measure("yuocore.world.late_update");
+            using (YuoCoreTrace.Measure("yuocore.world.command_buffer"))
+                ExecutionCommandBuffer();
+            using (YuoCoreTrace.Measure("yuocore.world.late_update_systems"))
+                RunSystemForAllEntity(SystemType.LateUpdate);
+            using (YuoCoreTrace.Measure("yuocore.world.command_buffer"))
+                ExecutionCommandBuffer();
         }
 
         public bool IsPlaying { get; private set; } = true;

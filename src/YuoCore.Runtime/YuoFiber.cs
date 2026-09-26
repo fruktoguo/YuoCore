@@ -91,12 +91,15 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
         Func<YuoFiber, CancellationToken, ValueTask> action,
         CancellationToken cancellationToken)
     {
+        using var enqueueMeasurement = YuoCoreTrace.Measure("yuocore.fiber.enqueue");
+        YuoCoreTrace.Count("yuocore.fiber.enqueue.count");
         // 写入前计数：有界通道下阻塞中的 writer 也属于待处理压力；
         // 且避免 reader 先消费导致计数出现负值。
         Interlocked.Increment(ref _pendingMessages);
         try
         {
-            await _mailbox.Writer.WriteAsync(action, cancellationToken).ConfigureAwait(false);
+            using (YuoCoreTrace.Measure("yuocore.fiber.enqueue.write"))
+                await _mailbox.Writer.WriteAsync(action, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
@@ -154,6 +157,9 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
         ThrowIfDisposed();
         EnsureStarted();
 
+        using var tickMeasurement = YuoCoreTrace.Measure("yuocore.fiber.tick");
+        YuoCoreTrace.Count("yuocore.fiber.tick.count");
+
         var previous = s_current.Value;
         s_current.Value = this;
         try
@@ -161,8 +167,10 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
             // mailbox 先于 World.Update 执行，保证本帧收到的命令可以在同一帧进入 ECS 逻辑。
             // MaxMailboxMessagesPerTick 用来限制突发消息把帧更新完全饿死。
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCts.Token);
-            await DrainMailboxAsync(linkedCts.Token).ConfigureAwait(false);
-            World.Update();
+            using (YuoCoreTrace.Measure("yuocore.fiber.drain_mailbox"))
+                await DrainMailboxAsync(linkedCts.Token).ConfigureAwait(false);
+            using (YuoCoreTrace.Measure("yuocore.fiber.world_update"))
+                World.Update();
         }
         finally
         {
@@ -175,13 +183,18 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
         ThrowIfDisposed();
         EnsureStarted();
 
+        using var tickMeasurement = YuoCoreTrace.Measure("yuocore.fiber.fixed_tick");
+        YuoCoreTrace.Count("yuocore.fiber.fixed_tick.count");
+
         var previous = s_current.Value;
         s_current.Value = this;
         try
         {
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCts.Token);
-            await DrainMailboxAsync(linkedCts.Token).ConfigureAwait(false);
-            World.FixedUpdate();
+            using (YuoCoreTrace.Measure("yuocore.fiber.drain_mailbox"))
+                await DrainMailboxAsync(linkedCts.Token).ConfigureAwait(false);
+            using (YuoCoreTrace.Measure("yuocore.fiber.world_fixed_update"))
+                World.FixedUpdate();
         }
         finally
         {
@@ -194,11 +207,15 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
         ThrowIfDisposed();
         EnsureStarted();
 
+        using var tickMeasurement = YuoCoreTrace.Measure("yuocore.fiber.late_tick");
+        YuoCoreTrace.Count("yuocore.fiber.late_tick.count");
+
         var previous = s_current.Value;
         s_current.Value = this;
         try
         {
-            World.LateUpdate();
+            using (YuoCoreTrace.Measure("yuocore.fiber.world_late_update"))
+                World.LateUpdate();
         }
         finally
         {
@@ -209,6 +226,9 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
     public async ValueTask DrainMailboxAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
+
+        using var drainMeasurement = YuoCoreTrace.Measure("yuocore.fiber.mailbox_drain");
+        YuoCoreTrace.Count("yuocore.fiber.mailbox_drain.count");
 
         var maxMessages = Math.Max(1, Options.MaxMailboxMessagesPerTick);
         var processed = 0;
@@ -223,8 +243,10 @@ public sealed class YuoFiber : IAsyncDisposable, IDisposable
             }
 
             Interlocked.Decrement(ref _pendingMessages);
+            YuoCoreTrace.Count("yuocore.fiber.mailbox_message");
             try
             {
+                using var actionMeasurement = YuoCoreTrace.Measure("yuocore.fiber.mailbox_action");
                 await action(this, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

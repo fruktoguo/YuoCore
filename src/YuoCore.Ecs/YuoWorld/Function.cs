@@ -65,6 +65,8 @@ namespace YuoCore.Ecs
         /// </summary>
         public void Refresh()
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.refresh");
+            YuoCoreTrace.Count("yuocore.world.refresh.count");
             CoverSystem();
             SystemSort();
             GetLinkComponent();
@@ -84,6 +86,8 @@ namespace YuoCore.Ecs
         /// </summary>
         public void LoadAssembly(Assembly assembly)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.load_assembly");
+            YuoCoreTrace.Count("yuocore.world.load_assembly.count");
             if (assembly.IsDynamic) return;
             Type[] types;
             try
@@ -154,6 +158,8 @@ namespace YuoCore.Ecs
         /// </summary>
         public void LoadTypes(Type[] types)
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.load_types");
+            YuoCoreTrace.Count("yuocore.world.load_types.count");
             try
             {
                 List<SystemBase> systems = new();
@@ -191,6 +197,8 @@ namespace YuoCore.Ecs
         /// </summary>
         public void SystemSort()
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.system_sort");
+            YuoCoreTrace.Count("yuocore.world.system_sort.count");
             // 使用SystemGroupSorter进行Group级别和Order级别的排序
             allSystem = SystemGroupSorter.SortSystems(allSystem, GetOrder);
 

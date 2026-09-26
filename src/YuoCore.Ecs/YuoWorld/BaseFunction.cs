@@ -48,6 +48,8 @@ namespace YuoCore.Ecs
         /// </summary>
         private void ExecutionCommandBuffer()
         {
+            using var measurement = YuoCoreTrace.Measure("yuocore.world.execution_command_buffer");
+            YuoCoreTrace.Count("yuocore.world.execution_command_buffer.count");
             if (componentDestroyBuffer.HasBuffer)
             {
                 foreach (var yuoComponent in componentDestroyBuffer.ExecutionBuffer())
