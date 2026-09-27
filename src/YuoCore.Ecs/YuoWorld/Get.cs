@@ -6,18 +6,13 @@ namespace YuoCore.Ecs
     public partial class YuoWorld
     {
         /// <summary>
-        /// 通过标签获取系统
+        /// 通过标签获取系统；tagId &lt; 0 视为无订阅
         /// </summary>
         private bool GetSystemOfTag(Type type, out List<SystemBase> systems)
         {
-            if (systemsOfTag.TryGetValue(type, out var value))
-            {
-                systems = value;
-                return true;
-            }
-
-            systems = null;
-            return false;
+            var tagId = ComponentTypeRegistry.GetId(type);
+            systems = tagId >= 0 ? GetSystemsByTagId(tagId) : null;
+            return systems != null;
         }
 
         /// <summary>
@@ -38,30 +33,20 @@ namespace YuoCore.Ecs
         }
 
         /// <summary>
-        ///  通过组件获取系统
+        ///  通过组件获取系统；componentId &lt; 0 视为无命中
         /// </summary>
         private bool GetSystemOfComponent(Type type, out List<SystemBase> systems)
         {
-            if (systemsOfComponent.TryGetValue(type, out var value))
-            {
-                systems = value;
-                return true;
-            }
-
-            systems = null;
-            return false;
+            var componentId = ComponentTypeRegistry.GetId(type);
+            systems = componentId >= 0 ? GetSystemsByComponentId(componentId) : null;
+            return systems != null;
         }
 
         private bool GetSystemOfBaseComponent(Type type, out List<SystemBaseBase> systems)
         {
-            if (systemsOfBaseComponent.TryGetValue(type, out var list))
-            {
-                systems = list;
-                return true;
-            }
-
-            systems = null;
-            return false;
+            var baseTypeId = ComponentTypeRegistry.GetId(type);
+            systems = baseTypeId >= 0 ? GetSystemsByBaseTypeId(baseTypeId) : null;
+            return systems != null;
         }
 
         public MultiHashSetMap<Type, YuoComponent> GetAllComponents() => components;

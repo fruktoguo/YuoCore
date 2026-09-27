@@ -207,9 +207,10 @@ namespace YuoCore.Ecs
             systemsOfComponent.Clear();
             systemsOfTag.Clear();
             systemDic.Clear();
-            // 组件命中索引与 systemsOfComponent 同步重建；
+            // 组件/标签命中索引与 systemsOfComponent、systemsOfTag 同步重建；
             // systemsOfBaseComponent 未清理，其索引列表仍是同一引用，保持一致即可。
             ResetComponentSystemIndex();
+            ResetTagSystemIndex();
 
             foreach (var system in allSystem)
             {
@@ -223,6 +224,7 @@ namespace YuoCore.Ecs
                         if (iInter == typeof(ISystemTag))
                         {
                             systemsOfTag.AddItem(inter, system);
+                            IndexSystemForTag(inter);
                             system.systemTags.Add(inter);
                         }
                     }
@@ -255,22 +257,22 @@ namespace YuoCore.Ecs
         private void CacheHighFrequencySystems()
         {
             // 缓存IUpdate系统
-            _updateSystems = systemsOfTag.TryGetValue(SystemType.Update, out var updateList)
+            _updateSystems = GetSystemsByTagId(ComponentTypeRegistry.GetId(SystemType.Update)) is { } updateList
                 ? new List<SystemBase>(updateList)
                 : new List<SystemBase>();
 
             // 缓存IFixedUpdate系统
-            _fixedUpdateSystems = systemsOfTag.TryGetValue(SystemType.FixedUpdate, out var fixedList)
+            _fixedUpdateSystems = GetSystemsByTagId(ComponentTypeRegistry.GetId(SystemType.FixedUpdate)) is { } fixedList
                 ? new List<SystemBase>(fixedList)
                 : new List<SystemBase>();
 
             // 缓存ILateUpdate系统
-            _lateUpdateSystems = systemsOfTag.TryGetValue(SystemType.LateUpdate, out var lateList)
+            _lateUpdateSystems = GetSystemsByTagId(ComponentTypeRegistry.GetId(SystemType.LateUpdate)) is { } lateList
                 ? new List<SystemBase>(lateList)
                 : new List<SystemBase>();
 
             // 缓存IOnDrawGizmos系统
-            _onDrawGizmosSystems = systemsOfTag.TryGetValue(SystemType.OnDrawGizmos, out var gizmosList)
+            _onDrawGizmosSystems = GetSystemsByTagId(ComponentTypeRegistry.GetId(SystemType.OnDrawGizmos)) is { } gizmosList
                 ? new List<SystemBase>(gizmosList)
                 : new List<SystemBase>();
         }

@@ -471,7 +471,9 @@ namespace YuoCore.Ecs
         private List<SystemBase> BuildSystemForAllEntity(Type tagType)
         {
             List<SystemBase> result = new();
-            if (systemsOfTag.TryGetValue(tagType, out var list))
+            var tagId = ComponentTypeRegistry.GetId(tagType);
+            var list = tagId >= 0 ? GetSystemsByTagId(tagId) : null;
+            if (list != null)
             {
                 result.AddRange(list);
             }

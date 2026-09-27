@@ -8823,8 +8823,9 @@ local-composite-count:     123.905ms -> 144.780ms，+16.848%；allocated -0.102%
 5. 稠密系统实体集合：迭代走 `_denseEntities` 数组 + `_entitySlots` 稀疏反查；
    删除墓碑保序，迭代期间增删仍延迟并入；公开 `Entities`（HashSet）保持成员语义，
    外部直接改写时按数量偏差自动重建。
-6. 生命周期索引：`componentId → 系统列表` 命中表，与 `systemsOfComponent`/
-   `systemsOfBaseComponent` 共用同一 `List` 实例，注册/排序/移除天然同步。
+6. 生命周期索引：`componentId/tagId → 系统列表` 命中表，与 `systemsOfComponent`/
+   `systemsOfBaseComponent`/`systemsOfTag` 共用同一 `List` 实例，注册/排序/移除天然同步；
+   标签键系统派发与组件删除路径同样按稠密 id 直查。
 7. Fiber 消息：邮箱节点池化（`MailboxItem` 复用承载同步/异步消息）、
    投递快速路径免 async 状态机与闭包、调用方令牌不可取消时免 linked CTS。
 

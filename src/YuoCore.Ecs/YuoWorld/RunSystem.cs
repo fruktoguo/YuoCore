@@ -293,8 +293,9 @@ namespace YuoCore.Ecs
             }
             else
             {
-                // 其他系统使用原有字典查找
-                systemsOfTag.TryGetValue(tagType, out systems);
+                // 其他标签走稠密索引直查，免 Type 字典查找；tagId < 0 视为无订阅
+                var tagId = ComponentTypeRegistry.GetId(tagType);
+                systems = tagId >= 0 ? GetSystemsByTagId(tagId) : null;
             }
 
             // 执行系统
@@ -372,7 +373,10 @@ namespace YuoCore.Ecs
         {
             systems = null;
 
-            if (!systemsOfTag.TryGetValue(tagType, out var allSystems))
+            // 标签稠密索引直查；tagId < 0 视为无订阅
+            var tagId = ComponentTypeRegistry.GetId(tagType);
+            var allSystems = tagId >= 0 ? GetSystemsByTagId(tagId) : null;
+            if (allSystems == null)
                 return false;
 
             // 构建ValueTuple缓存键（零分配）
