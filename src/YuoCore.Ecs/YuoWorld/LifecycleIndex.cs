@@ -103,6 +103,12 @@ namespace YuoCore.Ecs
             Array.Clear(_systemsByTagId, 0, _systemsByTagId.Length);
         }
 
+        /// <summary>清空基类命中索引。仅在 systemsOfBaseComponent 被整体 Clear/重建时调用。</summary>
+        private void ResetBaseComponentSystemIndex()
+        {
+            Array.Clear(_systemsByBaseTypeId, 0, _systemsByBaseTypeId.Length);
+        }
+
         /// <summary>清空全部生命周期索引（世界销毁/重建时）。</summary>
         private void ResetLifecycleIndex()
         {

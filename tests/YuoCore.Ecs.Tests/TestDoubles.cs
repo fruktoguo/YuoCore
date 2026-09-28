@@ -380,3 +380,17 @@ public sealed class EcsSpawnSystem : YuoSystem<EcsSpawnComp>, IAwake, IUpdate
         child.AddComponent<EcsSpawnComp>();
     }
 }
+
+/// <summary>IDestroy 回调内重入释放宿主实体的探针组件。</summary>
+public class EcsReentrantDisposeComp : YuoComponent
+{
+}
+
+/// <summary>IDestroy 回调内对宿主实体再次调用 Dispose：验证处置重入守卫。</summary>
+public sealed class EcsReentrantDisposeSystem : YuoSystem<EcsReentrantDisposeComp>, IDestroy
+{
+    public override void Run(EcsReentrantDisposeComp component)
+    {
+        component.Entity?.Dispose();
+    }
+}

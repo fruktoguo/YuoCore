@@ -28,7 +28,7 @@ namespace YuoCore.Ecs
                 ? entity.GetBaseComponentById(_slotId1)
                 : _store1.Get(entity.EntityIndex);
 
-            if (t1 is T1 typed1 && typed1.IsUsable()) Run(typed1);
+            if (t1 is T1 typed1 && CanRunComponent(typed1, entity)) Run(typed1);
         }
 
         public abstract void Run(T1 baseComponent);
@@ -73,8 +73,8 @@ namespace YuoCore.Ecs
                 ? entity.GetBaseComponentById(_slotId2)
                 : _store2.Get(entity.EntityIndex);
 
-            if (t1 is T1 typed1 && typed1.IsUsable() &&
-                t2 is T2 typed2 && typed2.IsUsable()) Run(typed1, typed2);
+            if (t1 is T1 typed1 && CanRunComponent(typed1, entity) &&
+                t2 is T2 typed2 && CanRunComponent(typed2, entity)) Run(typed1, typed2);
         }
 
         public abstract void Run(T1 baseComponent, T2 component2);

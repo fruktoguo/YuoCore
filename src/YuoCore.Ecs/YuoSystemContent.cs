@@ -23,7 +23,7 @@ namespace YuoCore.Ecs
             var pos = _store1.GetSlot(entity.EntityIndex);
             if (pos == 0) return;
             var t1 = _store1.Dense[pos - 1];
-            if (t1.IsUsable())
+            if (CanRunComponent(t1, entity))
             {
                 Run(t1 as T1);
             }
@@ -59,11 +59,11 @@ namespace YuoCore.Ecs
             var pos1 = _store1.GetSlot(entityIndex);
             if (pos1 == 0) return;
             var t1 = _store1.Dense[pos1 - 1];
-            if (!t1.IsUsable()) return;
+            if (!CanRunComponent(t1, entity)) return;
             var pos2 = _store2.GetSlot(entityIndex);
             if (pos2 == 0) return;
             var t2 = _store2.Dense[pos2 - 1];
-            if (!t2.IsUsable()) return;
+            if (!CanRunComponent(t2, entity)) return;
             Run(t1 as T1, t2 as T2);
         }
 
@@ -103,15 +103,15 @@ namespace YuoCore.Ecs
             var pos1 = _store1.GetSlot(entityIndex);
             if (pos1 == 0) return;
             var t1 = _store1.Dense[pos1 - 1];
-            if (!t1.IsUsable()) return;
+            if (!CanRunComponent(t1, entity)) return;
             var pos2 = _store2.GetSlot(entityIndex);
             if (pos2 == 0) return;
             var t2 = _store2.Dense[pos2 - 1];
-            if (!t2.IsUsable()) return;
+            if (!CanRunComponent(t2, entity)) return;
             var pos3 = _store3.GetSlot(entityIndex);
             if (pos3 == 0) return;
             var t3 = _store3.Dense[pos3 - 1];
-            if (!t3.IsUsable()) return;
+            if (!CanRunComponent(t3, entity)) return;
             Run(t1 as T1, t2 as T2, t3 as T3);
         }
 
@@ -157,19 +157,19 @@ namespace YuoCore.Ecs
             var pos1 = _store1.GetSlot(entityIndex);
             if (pos1 == 0) return;
             var t1 = _store1.Dense[pos1 - 1];
-            if (!t1.IsUsable()) return;
+            if (!CanRunComponent(t1, entity)) return;
             var pos2 = _store2.GetSlot(entityIndex);
             if (pos2 == 0) return;
             var t2 = _store2.Dense[pos2 - 1];
-            if (!t2.IsUsable()) return;
+            if (!CanRunComponent(t2, entity)) return;
             var pos3 = _store3.GetSlot(entityIndex);
             if (pos3 == 0) return;
             var t3 = _store3.Dense[pos3 - 1];
-            if (!t3.IsUsable()) return;
+            if (!CanRunComponent(t3, entity)) return;
             var pos4 = _store4.GetSlot(entityIndex);
             if (pos4 == 0) return;
             var t4 = _store4.Dense[pos4 - 1];
-            if (!t4.IsUsable()) return;
+            if (!CanRunComponent(t4, entity)) return;
             Run(t1 as T1, t2 as T2, t3 as T3, t4 as T4);
         }
 

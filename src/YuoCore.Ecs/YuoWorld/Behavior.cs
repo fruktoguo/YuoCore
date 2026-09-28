@@ -15,6 +15,16 @@ namespace YuoCore.Ecs
             using var measurement = YuoCoreTrace.Measure("yuocore.world.on_init");
             YuoCoreTrace.Count("yuocore.world.on_init.count");
             IsPlaying = true;
+            // 重复初始化前先完整销毁存量实体：实体索引池随后归零重建，
+            // 存活旧实体若不清理，其旧索引会与新实体槽位串位。
+            if (Entities is { Count: > 0 })
+            {
+                foreach (var entity in Entities.Values.ToList())
+                {
+                    entity.Dispose();
+                }
+            }
+
             allSystem = new();
             Entities = new();
             components = new();

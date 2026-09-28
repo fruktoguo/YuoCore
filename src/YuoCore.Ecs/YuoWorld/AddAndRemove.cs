@@ -51,17 +51,24 @@ namespace YuoCore.Ecs
         }
 
         /// <summary>
-        /// 从世界中注销实体
+        /// 从世界中注销实体。
+        /// 稠密索引不在此处回收：实体 Dispose 尚未结束，回调中新建实体若立即复用该索引，
+        /// 残留句柄会命中新实体槽位。索引统一由 YuoEntity.Dispose 末尾 ReleaseEntityIndex 回收。
         /// </summary>
         public void UnRegisterEntity(YuoEntity entity)
         {
             using var measurement = YuoCoreTrace.Measure("yuocore.world.unregister_entity");
             YuoCoreTrace.Count("yuocore.world.unregister_entity.count");
-            if (Entities.Remove(entity.EntityData.Id))
-            {
-                // 实体真正移出世界时才回收稠密索引并清理稀疏存储残留槽位
-                ReleaseEntityIndex(entity.EntityIndex);
-            }
+            Entities.Remove(entity.EntityData.Id);
+        }
+
+        /// <summary>
+        /// 仅从世界组件集摘除组件实例，不做生命周期派发与系统成员移除。
+        /// 用于实体侧已被新实例替换的游离组件清理（其生命周期在替换时已完成）。
+        /// </summary>
+        internal void RemoveComponentItem(YuoComponent component)
+        {
+            components.RemoveItem(component.Type, component);
         }
 
         /// <summary>

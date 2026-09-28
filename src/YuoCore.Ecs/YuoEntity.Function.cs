@@ -186,6 +186,9 @@ namespace YuoCore.Ecs
             if (IsDisposed) return null;
             var component = World.GetComponentStore(componentId)?.Get(EntityIndex);
 
+            // 槽位残留防御：存储命中但组件不属于本实体时按未命中处理
+            if (component != null && !ReferenceEquals(component.Entity, this)) component = null;
+
             // 绕过 API 直接写 Components 字典的边角情况回退字典兜底
             if (component == null)
             {
@@ -428,6 +431,7 @@ namespace YuoCore.Ecs
         {
             using var measurement = YuoCoreTrace.Measure("yuocore.entity.has_component");
             YuoCoreTrace.Count("yuocore.entity.has_component.count");
+            if (IsDisposed) return false;
             // 掩码等价于 Components.ContainsKey；未命中再走字典兜底直接写入的边角情况
             var componentId = ComponentTypeRegistry.GetId(type);
             if (componentId >= 0 && TestComponentMask(componentId)) return true;
@@ -438,6 +442,7 @@ namespace YuoCore.Ecs
         {
             using var measurement = YuoCoreTrace.Measure("yuocore.entity.has_base_component");
             YuoCoreTrace.Count("yuocore.entity.has_base_component.count");
+            if (IsDisposed) return false;
             var componentId = ComponentTypeRegistry.GetId(type);
             if (componentId >= 0 && TestBaseComponentMask(componentId)) return true;
             return BaseComponents.ContainsKey(type);
@@ -460,7 +465,8 @@ namespace YuoCore.Ecs
                 var addedId = ComponentTypeRegistry.GetOrAddId(component.Type);
                 SetComponentMask(addedId);
                 World.StoreSetComponent(this, addedId, component);
-                Parent?.ChildComponents.AddItem(component.Type, component);
+                // 父实体已销毁时其 ChildComponents 置空，与 AddChildComponent 的空安全口径一致。
+                Parent?.ChildComponents?.AddItem(component.Type, component);
                 World.AddComponent(this, component);
             }
             else
@@ -507,6 +513,17 @@ namespace YuoCore.Ecs
                 SetComponentMask(componentId);
                 World.StoreSetComponent(this, componentId, component);
             }
+            else if (!ReferenceEquals(Components[type], component))
+            {
+                // 同键不同实例按替换语义处理：先走完整移除路径销毁旧实例
+                // （IDestroy 派发、世界组件集摘除、系统成员移除），再统一指向新实例，
+                // 保证 Components/掩码/稀疏存储三个视图不分裂。
+                Components[type].Dispose();
+                Components[type] = component;
+                var componentId = ComponentTypeRegistry.GetOrAddId(type);
+                SetComponentMask(componentId);
+                World.StoreSetComponent(this, componentId, component);
+            }
             World.AddComponent(this, component);
             Parent?.AddChildComponent(type, component);
         }
@@ -531,10 +548,31 @@ namespace YuoCore.Ecs
             using var measurement = YuoCoreTrace.Measure("yuocore.entity.remove_component");
             YuoCoreTrace.Count("yuocore.entity.remove_component.count");
             if (component.IsNullOrDisposed()) return;
-            if (!Components.ContainsKey(component.Type)) return;
+            // 字典键可能与 component.Type 不同（声明类型键路径），按实例身份定位真实键；
+            // 掩码与稀疏存储都按该键写入，移除必须走同一键才不会残留。
+            var keyType = component.Type;
+            if (!Components.TryGetValue(keyType, out var existing) || !ReferenceEquals(existing, component))
+            {
+                keyType = null;
+                foreach (var pair in Components)
+                {
+                    if (!ReferenceEquals(pair.Value, component)) continue;
+                    keyType = pair.Key;
+                    break;
+                }
+            }
+
+            if (keyType == null)
+            {
+                // 实例已从实体字典摘除（被 SetComponent 新实例替换或外部改写）：
+                // 只需清出世界组件集；成员集与实体簿记归属当前实例，不得触碰。
+                World.RemoveComponentItem(component);
+                return;
+            }
+
             World.RemoveComponent(this, component);
-            Components.Remove(component.Type);
-            var removedId = ComponentTypeRegistry.GetId(component.Type);
+            Components.Remove(keyType);
+            var removedId = ComponentTypeRegistry.GetId(keyType);
             if (removedId >= 0)
             {
                 ClearComponentMask(removedId);
@@ -556,7 +594,7 @@ namespace YuoCore.Ecs
 
         private void AddChildComponent(Type type, YuoComponent component)
         {
-            if (component?.Entity == null) return;
+            if (component?.Entity == null || ChildComponents == null) return;
             ChildComponents.AddItem(type, component);
             Children.Add(component.Entity);
         }
@@ -626,14 +664,15 @@ namespace YuoCore.Ecs
                 foreach (var item in entity.Components)
                 {
                     RemoveChildComponent(item.Value);
-                    ChildComponents.RemoveItem(item.Key, item.Value);
+                    ChildComponents?.RemoveItem(item.Key, item.Value);
                 }
             }
         }
 
         private void RemoveChildComponent(YuoComponent component)
         {
-            if (component == null) return;
+            // 实体已销毁时 ChildComponents 置空，后续清理调用必须空安全
+            if (component == null || ChildComponents == null) return;
             ChildComponents.RemoveItem(component.Type, component);
         }
 
@@ -654,6 +693,9 @@ namespace YuoCore.Ecs
         public bool IsDisposed { get; private set; }
         public bool IsDestroy { get; internal set; }
 
+        /// <summary>处置进行中标记：组件 IDestroy 回调可重入调用 Dispose，重入由外层统一完成。</summary>
+        private bool _isDisposing;
+
         /// <summary>
         /// 释放实体,不要在System中调用,如需释放请调用Destroy
         /// </summary>
@@ -662,6 +704,10 @@ namespace YuoCore.Ecs
             using var measurement = YuoCoreTrace.Measure("yuocore.entity.dispose");
             YuoCoreTrace.Count("yuocore.entity.dispose.count");
             if (IsDisposed) return;
+            // 处置不可重入：组件销毁回调里再次 Dispose 本实体时，完整清理由外层统一完成；
+            // 否则内层会先把 EntityData/子集清空，外层恢复执行后对空引用再清理造成 NRE。
+            if (_isDisposing) return;
+            _isDisposing = true;
 
             // Debug.Log($"{this} 释放实体 frame{Time.frameCount}");
             foreach (var item in Components.Values.ToList())
@@ -689,6 +735,11 @@ namespace YuoCore.Ecs
             EntityData = null;
             IsDisposed = true;
             IsDestroy = true;
+            // 稠密索引在整个 Dispose 完成后才回收：子实体销毁/IDestroy 回调中新建的实体
+            // 不得在本实体尚未清理完时复用其槽位。
+            var releasedIndex = EntityIndex;
+            EntityIndex = -1;
+            World.ReleaseEntityIndex(releasedIndex);
         }
 
         /// <summary>

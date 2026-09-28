@@ -206,11 +206,13 @@ namespace YuoCore.Ecs
 
             systemsOfComponent.Clear();
             systemsOfTag.Clear();
+            systemsOfBaseComponent.Clear();
             systemDic.Clear();
-            // 组件/标签命中索引与 systemsOfComponent、systemsOfTag 同步重建；
-            // systemsOfBaseComponent 未清理，其索引列表仍是同一引用，保持一致即可。
+            // 组件/标签/基类命中索引与三张映射表同步清空重建；
+            // systemsOfBaseComponent 必须一并清理，否则每次 Sort 后基类系统重复派发。
             ResetComponentSystemIndex();
             ResetTagSystemIndex();
+            ResetBaseComponentSystemIndex();
 
             foreach (var system in allSystem)
             {

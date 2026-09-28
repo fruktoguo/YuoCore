@@ -179,12 +179,13 @@ public sealed class YuoActiveEntitiesTests
             var pos = EcsWorlds.System<EcsPosUpdateSystem>(world);
 
             world.SetActiveEntities(new[] { e1 });
+            var index = e1.EntityIndex;
             e1.Destroy();          // 缓冲销毁
             world.Update();        // 帧首回放 e1.Dispose → 索引回收，本轮 stale 句柄安全跳过
             Assert.Equal(0, pos.RunCount);
 
             var e3 = new YuoEntity(world);
-            Assert.Equal(e1.EntityIndex, e3.EntityIndex); // 复用同一索引
+            Assert.Equal(index, e3.EntityIndex); // 复用同一索引
             e3.AddComponent<EcsPosComp>();
 
             world.Update();        // 活动集未重设：stale e1 句柄命中 e3 的组件槽位

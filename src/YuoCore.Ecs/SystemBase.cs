@@ -161,7 +161,9 @@ namespace YuoCore.Ecs
                     {
                         var entity = dense[i];
                         scanned++;
-                        if (entity == null)
+                        // 墓碑槽位与迭代期间被销毁的实体一并跳过，
+                        // 已释放实体不得再触发任何系统回调（稠密索引可能已被新实体复用）。
+                        if (entity == null || entity.IsDisposed)
                         {
                             nullSkipped++;
                             continue;
@@ -183,7 +185,7 @@ namespace YuoCore.Ecs
                     {
                         var entity = dense[i];
                         scanned++;
-                        if (entity == null)
+                        if (entity == null || entity.IsDisposed)
                         {
                             nullSkipped++;
                             continue;
@@ -272,9 +274,21 @@ namespace YuoCore.Ecs
         private int _activeCount;
         private bool _activeSelectionEnabled;
 
+        // 迭代期间收到活动集切换请求时的挂起状态，本轮迭代结束后生效
+        private IReadOnlyList<YuoEntity> _pendingActiveEntities;
+        private bool _pendingActiveClear;
+
         internal void SetActiveEntities(IReadOnlyList<YuoEntity> entities)
         {
             if (entities == null) throw new ArgumentNullException(nameof(entities));
+            // 迭代期间切换活动集会压实/换底层数组，先挂起到本轮结束统一生效
+            if (_isIteratingEntities)
+            {
+                _pendingActiveEntities = entities;
+                _pendingActiveClear = false;
+                return;
+            }
+
             if (_denseHoles > 0 || _denseLive != Entities.Count)
             {
                 CompactDenseEntities();
@@ -345,6 +359,13 @@ namespace YuoCore.Ecs
 
         internal void ClearActiveEntities()
         {
+            if (_isIteratingEntities)
+            {
+                _pendingActiveEntities = null;
+                _pendingActiveClear = true;
+                return;
+            }
+
             if (!_activeSelectionEnabled) return;
             Array.Clear(_activeEntities, 0, _activeCount);
             _activeCount = 0;
@@ -353,21 +374,30 @@ namespace YuoCore.Ecs
 
         private void AddEntity(YuoEntity entity)
         {
+            var entityIndex = entity.EntityIndex;
+            // 已释放实体的索引为 -1，不得再进入成员集
+            if (entityIndex < 0) return;
             if (!Entities.Add(entity)) return;
+
+            if ((uint)entityIndex < (uint)_entitySlots.Length)
+            {
+                var staleSlot = _entitySlots[entityIndex];
+                // 槽位被索引复用前的旧实体残留占用：该残留必然失效，清掉再写入
+                if (staleSlot != 0 && !ReferenceEquals(_denseEntities[staleSlot - 1], entity))
+                    _entitySlots[entityIndex] = 0;
+            }
+            else
+            {
+                var size = _entitySlots.Length;
+                while (size <= entityIndex) size = Math.Max(4, size * 2);
+                Array.Resize(ref _entitySlots, size);
+            }
 
             var dense = _denseEntities;
             if (_denseCount == dense.Length)
             {
                 Array.Resize(ref _denseEntities, Math.Max(4, dense.Length * 2));
                 dense = _denseEntities;
-            }
-
-            var entityIndex = entity.EntityIndex;
-            if (entityIndex >= _entitySlots.Length)
-            {
-                var size = _entitySlots.Length;
-                while (size <= entityIndex) size = Math.Max(4, size * 2);
-                Array.Resize(ref _entitySlots, size);
             }
 
             _entitySlots[entityIndex] = _denseCount + 1;
@@ -379,16 +409,22 @@ namespace YuoCore.Ecs
         {
             if (!Entities.Remove(entity)) return;
 
-            // 实体只在 HashSet 中（外部直接写入等情形）：等下次压实统一校正。
             var entityIndex = entity.EntityIndex;
-            if ((uint)entityIndex < (uint)_entitySlots.Length && _entitySlots[entityIndex] != 0)
+            if ((uint)entityIndex < (uint)_entitySlots.Length)
             {
-                _denseEntities[_entitySlots[entityIndex] - 1] = null;
-                _entitySlots[entityIndex] = 0;
-                _denseHoles++;
+                var slot = _entitySlots[entityIndex];
+                // 槽位必须仍指向本实体才允许墓碑化；索引已被复用时不得误伤新实体
+                if (slot != 0 && ReferenceEquals(_denseEntities[slot - 1], entity))
+                {
+                    _denseEntities[slot - 1] = null;
+                    _entitySlots[entityIndex] = 0;
+                    _denseHoles++;
+                    _denseLive--;
+                }
             }
 
-            _denseLive--;
+            // 实体不在稠密集（外部直写、索引复用、越界等）：_denseLive 未含该成员，
+            // 不做扣减，等下次压实重建统一校正。
         }
 
         private void CompactDenseEntities()
@@ -398,6 +434,7 @@ namespace YuoCore.Ecs
             if (_denseLive != Entities.Count)
             {
                 // 与公开集合出现偏差（外部直接改写 Entities）：以 HashSet 为准重建。
+                // 重建同时清掉成员集中的已释放实体（其 EntityIndex 已失效，不得写入槽位表）。
                 var entities = Entities;
                 if (_denseEntities.Length < entities.Count)
                 {
@@ -406,8 +443,15 @@ namespace YuoCore.Ecs
 
                 Array.Clear(_entitySlots, 0, _entitySlots.Length);
                 _denseCount = 0;
+                List<YuoEntity> dead = null;
                 foreach (var entity in entities)
                 {
+                    if (entity == null || entity.IsDisposed)
+                    {
+                        (dead ??= new List<YuoEntity>()).Add(entity);
+                        continue;
+                    }
+
                     var entityIndex = entity.EntityIndex;
                     if (entityIndex >= _entitySlots.Length)
                     {
@@ -421,18 +465,34 @@ namespace YuoCore.Ecs
                     _denseCount++;
                 }
 
+                if (dead != null)
+                {
+                    foreach (var entity in dead)
+                    {
+                        entities.Remove(entity);
+                    }
+                }
+
                 _denseLive = _denseCount;
                 _denseHoles = 0;
                 return;
             }
 
             // 保序压实：非空槽位前移，其余槽位置空，同步槽位表。
+            // 迭代期间被销毁的实体同样移出（其索引已失效，槽位表不可再触碰）。
             var denseArr = _denseEntities;
             var write = 0;
             for (var i = 0; i < _denseCount; i++)
             {
                 var entity = denseArr[i];
                 if (entity == null) continue;
+                if (entity.IsDisposed)
+                {
+                    denseArr[i] = null;
+                    Entities.Remove(entity);
+                    continue;
+                }
+
                 if (write != i)
                 {
                     denseArr[write] = entity;
@@ -445,6 +505,7 @@ namespace YuoCore.Ecs
 
             _denseCount = write;
             _denseHoles = 0;
+            _denseLive = write;
         }
 
         private void ApplyPendingEntityChanges()
@@ -468,6 +529,19 @@ namespace YuoCore.Ecs
 
                 _pendingLeaveEntities.Clear();
             }
+
+            // 迭代期间请求的活动集切换在成员变更之后统一生效
+            if (_pendingActiveClear)
+            {
+                _pendingActiveClear = false;
+                ClearActiveEntities();
+            }
+            else if (_pendingActiveEntities != null)
+            {
+                var pending = _pendingActiveEntities;
+                _pendingActiveEntities = null;
+                SetActiveEntities(pending);
+            }
         }
 
         internal virtual void Clear()
@@ -487,6 +561,8 @@ namespace YuoCore.Ecs
             _requiredComponentIdsSourceCount = -1;
             _pendingJoinEntities?.Clear();
             _pendingLeaveEntities?.Clear();
+            _pendingActiveEntities = null;
+            _pendingActiveClear = false;
         }
 
         // influenceTypes 对应的组件 id 缓存：构建后掩码按位判定代替逐类型 HasComponent。
@@ -522,7 +598,9 @@ namespace YuoCore.Ecs
             var required = RequiredComponentIds;
             for (var i = 0; i < required.Length; i++)
             {
-                if (!entity.TestComponentMask(required[i])) return false;
+                // 掩码未命中再走字典兜底，兼容绕过 SetComponent 直写 Components 的边角
+                if (!entity.TestComponentMask(required[i]) && !entity.Components.ContainsKey(influenceTypes[i]))
+                    return false;
             }
 
             return true;
@@ -532,6 +610,8 @@ namespace YuoCore.Ecs
         {
             using var measurement = YuoCoreTrace.Measure("yuocore.system.check_valid_entity");
             YuoCoreTrace.Count("yuocore.system.check_valid_entity.count");
+            // 已释放实体不得加入成员集（索引已回收，成员集会因残留产生幽灵回调）
+            if (entity == null || entity.IsDisposed) return false;
             if (!MatchesRequiredComponents(entity)) return false;
 
             if (_isIteratingEntities)
@@ -566,6 +646,8 @@ namespace YuoCore.Ecs
         internal bool m_Run(YuoEntity entity)
         {
             if (!Enabled) return false;
+            // 已释放实体一律跳过：稠密索引可能已被新实体复用，继续执行会串读到他人组件
+            if (entity == null || entity.IsDisposed) return false;
             if (!Entities.Contains(entity))
             {
                 YuoCoreTrace.Count("yuocore.system.single_skip.not_member");
@@ -604,6 +686,18 @@ namespace YuoCore.Ecs
             StopClock();
 #endif
             return true;
+        }
+
+        /// <summary>
+        /// RunEntity 执行前的统一判定：组件必须归属该实体且处于可运行状态。
+        /// 归属校验阻止稠密索引复用后串读到新实体的组件；
+        /// IDestroy 派发放行已标记待销毁但尚未释放的组件（缓冲回放路径），其余标签仍要求可用。
+        /// </summary>
+        protected bool CanRunComponent(YuoComponent component, YuoEntity entity)
+        {
+            return component != null
+                && ReferenceEquals(component.Entity, entity)
+                && (component.IsUsable() || (RunType == typeof(IDestroy) && !component.IsDisposed));
         }
 
         protected abstract void RunEntity(YuoEntity entity);
@@ -671,7 +765,8 @@ namespace YuoCore.Ecs
             var requiredBase = RequiredBaseTypeIds;
             for (var i = 0; i < requiredBase.Length; i++)
             {
-                if (!entity.TestBaseComponentMask(requiredBase[i]))
+                // 掩码未命中再走 BaseComponents 兜底，与 HasBaseComponent 口径一致
+                if (!entity.TestBaseComponentMask(requiredBase[i]) && !entity.BaseComponents.ContainsKey(baseTypes[i]))
                 {
                     return false;
                 }

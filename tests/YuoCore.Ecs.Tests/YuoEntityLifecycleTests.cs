@@ -197,6 +197,98 @@ public sealed class YuoEntityLifecycleTests
         }
     }
 
+    /// <summary>父实体已销毁（ChildComponents 置空）时，存活的孤儿实体 ReplaceComponent 不得 NRE。</summary>
+    [Fact]
+    public void Replace_component_with_disposed_parent_does_not_throw()
+    {
+        var world = EcsWorlds.Create();
+        try
+        {
+            var parent = new YuoEntity(world);
+            parent.Dispose();
+            Assert.True(parent.IsDisposed);
+
+            var child = new YuoEntity(world);
+            // 把存活子实体挂到已释放父实体上（stale Parent 指针场景）
+            child.SetParent(parent);
+            Assert.False(child.IsDisposed);
+            Assert.Same(parent, child.Parent);
+
+            // 修复前：Parent.ChildComponents 已置空 → NullReferenceException
+            child.ReplaceComponent(new EcsVelComp());
+            Assert.NotNull(child.GetComponent<EcsVelComp>());
+        }
+        finally
+        {
+            world.OnDestroy();
+        }
+    }
+
+    /// <summary>已释放实体上继续写入组件：索引已失效，不得向稀疏存储越界写入。</summary>
+    [Fact]
+    public void Set_component_on_disposed_entity_does_not_touch_store()
+    {
+        var world = EcsWorlds.Create();
+        try
+        {
+            var entity = new YuoEntity(world);
+            entity.Dispose();
+            Assert.True(entity.IsDisposed);
+
+            entity.SetComponent(typeof(EcsPosComp), new EcsPosComp());
+            Assert.Null(entity.GetComponent<EcsPosComp>());
+        }
+        finally
+        {
+            world.OnDestroy();
+        }
+    }
+
+    /// <summary>迭代期间加入后销毁的实体，压实/重建时不得因失效索引抛异常。</summary>
+    [Fact]
+    public void Disposed_member_is_cleaned_during_compaction()
+    {
+        var world = EcsWorlds.Create();
+        try
+        {
+            LifecycleTrace.Reset();
+            var system = EcsWorlds.System<EcsPosDestroySystem>(world);
+            var entity = new YuoEntity(world);
+            entity.AddComponent<EcsPosComp>();
+
+            // 直接杀掉成员实体后驱动系统更新：死成员留在成员集直到压实
+            entity.Dispose();
+            world.Update();
+            world.Update();
+
+            Assert.DoesNotContain(entity, system.Entities);
+        }
+        finally
+        {
+            world.OnDestroy();
+        }
+    }
+
+    /// <summary>组件 IDestroy 回调内重入 Dispose 实体：内层直接退出，外层完成完整清理不 NRE。</summary>
+    [Fact]
+    public void Reentrant_dispose_inside_component_destroy_is_safe()
+    {
+        var world = EcsWorlds.Create();
+        try
+        {
+            var entity = new YuoEntity(world);
+            entity.AddComponent<EcsReentrantDisposeComp>();
+
+            var ex = Record.Exception(() => entity.Dispose());
+            Assert.Null(ex);
+            Assert.True(entity.IsDisposed);
+        }
+        finally
+        {
+            world.OnDestroy();
+        }
+    }
+
     /// <summary>实体 id 全局唯一：静态计数器保证跨世界/同秒内不重复。</summary>
     [Fact]
     public void Entity_ids_are_unique_across_entities_and_worlds()

@@ -82,6 +82,9 @@ namespace YuoCore.Ecs
         {
             using var measurement = YuoCoreTrace.Measure("yuocore.store.set");
             YuoCoreTrace.Count("yuocore.store.set.count");
+            // 已释放实体索引为 -1（与 Remove/Get 的负值保护口径一致）：
+            // 字典侧写入照旧进行，但不向稀疏存储落位，避免越界并保证存储只承载存活实体。
+            if (entityIndex < 0) return;
             EnsureSparse(entityIndex);
             var pos = _sparse[entityIndex];
             if (pos != 0)

@@ -75,7 +75,8 @@ namespace YuoCore.Ecs
             {
             }
             // Debug.Log($"{this} 释放组件 frame{Time.frameCount}");
-            Entity.RemoveComponent(this);
+            // Entity 可能已被摘除（游离实例/实体先销毁）：仍要完成自身状态清理
+            Entity?.RemoveComponent(this);
             Entity = null;
             IsDisposed = true;
             IsDestroy = true;
